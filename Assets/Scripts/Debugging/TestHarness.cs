@@ -1,37 +1,4 @@
-﻿// ============================================================
-//  TestHarness.cs
-//  Full run-loop test harness with ScriptableObject support.
-//
-//  SETUP:
-//    1. New empty scene
-//    2. Empty GameObject → Add TestHarness
-//    3. Assign DefenseConfig (required)
-//    4. Optionally assign CardPool, NormalEnemyPool, EliteEnemyPool,
-//       BossEnemyPool, EventPool, CharacterData in the Inspector.
-//       If left empty, hardcoded fallbacks are used automatically.
-//    5. Press Play
-//
-//  FIXES INCLUDED:
-//    • Dead enemies are skipped on their turn (guard in DrawCombat
-//      and a note for CombatManager — see DEAD ENEMY FIX below)
-//    • Rewards always appear after combat
-//    • Intent display infers from EnemyAction fields or uses
-//      EnemyAction.customIntentDescription if set
-//
-//  NOTE — add this field to EnemyAction.cs for custom intents:
-//    [Tooltip("If set, overrides the auto-generated intent description.")]
-//    public string customIntentDescription = "";
-//
-//  NOTE — add this guard to CombatManager.DoEnemyTurn() to prevent
-//  dead enemies from attacking:
-//    foreach (var enemy in _enemies)
-//    {
-//        if (enemy.IsDead) continue;   // ← ADD THIS LINE
-//        yield return StartCoroutine(enemy.ExecuteIntent(...));
-//    }
-// ============================================================
-
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace CardGame
@@ -51,10 +18,6 @@ namespace CardGame
 
     public class TestHarness : MonoBehaviour
     {
-        // ----------------------------------------------------------
-        // Inspector — ScriptableObject data sources
-        // ----------------------------------------------------------
-
         [Header("Required")]
         public DefenseConfig defenseConfig;
 
@@ -82,18 +45,10 @@ namespace CardGame
         public int startingEnergy = 3;
         public int drawPerTurn = 5;
 
-        // ----------------------------------------------------------
-        // Systems
-        // ----------------------------------------------------------
-
         private CombatManager _combatManager;
         private DeckManager _deckManager;
         private NavigationSystem _navigation;
         private MysteryRoomResolver _mysteryResolver;
-
-        // ----------------------------------------------------------
-        // Run state
-        // ----------------------------------------------------------
 
         private HarnessState _state = HarnessState.Navigation;
         private HarnessState _returnState = HarnessState.Navigation;
@@ -107,10 +62,6 @@ namespace CardGame
         private CharacterClass _playerClass = CharacterClass.Orin;
         private List<CardInstance> _masterDeck = new List<CardInstance>();
         private CombatEntity _playerEntity;
-
-        // ----------------------------------------------------------
-        // Per-room state
-        // ----------------------------------------------------------
 
         private List<RoomChoice> _currentChoices = new List<RoomChoice>();
         private RoomChoice _activeChoice;
@@ -126,10 +77,6 @@ namespace CardGame
         // Event
         private EventData _activeEvent;
 
-        // ----------------------------------------------------------
-        // Runtime pools (merged from SO + fallback)
-        // ----------------------------------------------------------
-
         private List<CardData> _runtimeCardPool = new List<CardData>();
         private List<EnemyData> _runtimeNormalPool = new List<EnemyData>();
         private List<EnemyData> _runtimeElitePool = new List<EnemyData>();
@@ -137,18 +84,10 @@ namespace CardGame
         private List<EventData> _runtimeEventPool = new List<EventData>();
         private FloorConfig _runtimeFloorConfig;
 
-        // ----------------------------------------------------------
-        // IMGUI scroll state
-        // ----------------------------------------------------------
-
         private Vector2 _logScroll;
         private Vector2 _handScroll;
         private Vector2 _deckScroll;
         private string _log = "";
-
-        // ============================================================
-        // UNITY LIFECYCLE
-        // ============================================================
 
         void Awake()
         {
@@ -213,10 +152,6 @@ namespace CardGame
             GoToNavigation();
         }
 
-        // ============================================================
-        // IMGUI — MAIN DISPATCHER
-        // ============================================================
-
         void OnGUI()
         {
             DrawTopBar();
@@ -237,10 +172,6 @@ namespace CardGame
 
             GUILayout.EndArea();
         }
-
-        // ============================================================
-        // TOP BAR
-        // ============================================================
 
         void DrawTopBar()
         {
@@ -275,10 +206,6 @@ namespace CardGame
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
         }
-
-        // ============================================================
-        // NAVIGATION
-        // ============================================================
 
         void DrawNavigation()
         {
@@ -378,10 +305,6 @@ namespace CardGame
                     break;
             }
         }
-
-        // ============================================================
-        // COMBAT
-        // ============================================================
 
         void StartCombat(RoomChoice choice)
         {
@@ -556,10 +479,6 @@ namespace CardGame
             _state = HarnessState.Reward;
         }
 
-        // ============================================================
-        // REWARD
-        // ============================================================
-
         void DrawReward()
         {
             GUILayout.Label("── Card Reward ──", Bold(19));
@@ -597,10 +516,6 @@ namespace CardGame
 
             DrawLog(108);
         }
-
-        // ============================================================
-        // SHOP
-        // ============================================================
 
         void OpenShop()
         {
@@ -692,10 +607,6 @@ namespace CardGame
             _ => 50
         };
 
-        // ============================================================
-        // REST
-        // ============================================================
-
         void DrawRest()
         {
             GUILayout.Label("── Rest Site ──", Bold(19));
@@ -757,10 +668,6 @@ namespace CardGame
             GUILayout.EndHorizontal();
             DrawLog(108);
         }
-
-        // ============================================================
-        // EVENT
-        // ============================================================
 
         void DrawEvent()
         {
@@ -845,10 +752,6 @@ namespace CardGame
             PostRoomComplete();
         }
 
-        // ============================================================
-        // TREASURE
-        // ============================================================
-
         void OpenTreasure()
         {
             _rewardChoices.Clear();
@@ -870,10 +773,6 @@ namespace CardGame
             _state = HarnessState.Reward;
             Log("💎 Treasure room — pick a card.");
         }
-
-        // ============================================================
-        // DECK REVIEW OVERLAY
-        // ============================================================
 
         void DrawDeckReview()
         {
@@ -904,10 +803,6 @@ namespace CardGame
             GUILayout.EndScrollView();
         }
 
-        // ============================================================
-        // VICTORY / DEFEAT
-        // ============================================================
-
         void DrawVictory()
         {
             GUILayout.Label("🏆  VICTORY — Run Complete!", Bold(24));
@@ -932,10 +827,6 @@ namespace CardGame
                 UnityEngine.SceneManagement.SceneManager.LoadScene(
                     UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
         }
-
-        // ============================================================
-        // ROOM COMPLETION
-        // ============================================================
 
         void PostRoomComplete()
         {
@@ -974,12 +865,6 @@ namespace CardGame
             return rs;
         }
 
-        // ============================================================
-        // GOLD BONUS PER ROOM TYPE
-        // Gold from combat comes from CombatResult — this covers
-        // the flat bonus for non-combat rooms and elite/boss bumps.
-        // ============================================================
-
         int GoldBonusForRoom(RoomType type) => type switch
         {
             RoomType.NormalCombat => 0,         // CombatResult already handles this
@@ -992,19 +877,9 @@ namespace CardGame
             _ => 0
         };
 
-        // ============================================================
-        // INTENT DISPLAY
-        // Infers a readable description from EnemyAction fields.
-        // If EnemyAction.customIntentDescription is non-empty, uses that.
-        // Requires adding to EnemyAction.cs:
-        //   public string customIntentDescription = "";
-        // ============================================================
-
         string BuildIntentDisplay(EnemyAction intent)
         {
             if (intent == null) return "  ❓ Unknown";
-
-            // Custom description takes full priority
             // Uncomment when customIntentDescription is added to EnemyAction:
             // if (!string.IsNullOrEmpty(intent.customIntentDescription))
             //     return $"  {IntentIcon(intent.intentType)} {intent.customIntentDescription}";
@@ -1032,12 +907,6 @@ namespace CardGame
                 _ => $"  {icon} {name}"
             };
         }
-
-        // ============================================================
-        // RUNTIME POOL BUILDERS
-        // SO data takes priority; hardcoded fallbacks fill any gaps.
-        // ============================================================
-
         void BuildRuntimePools()
         {
             // Card pool
@@ -1125,12 +994,6 @@ namespace CardGame
                 Log("✓ FloorConfig: fallback (5–7 rooms for fast testing)");
             }
         }
-
-        // ============================================================
-        // HARDCODED FALLBACKS
-        // Only used when no ScriptableObjects are assigned.
-        // ============================================================
-
         void BuildFallbackStarterDeck()
         {
             // Requires at least Strike and Defend in the card pool
@@ -1209,10 +1072,6 @@ namespace CardGame
             _runtimeEventPool.Add(shrine);
             _runtimeEventPool.Add(merchant);
         }
-
-        // ============================================================
-        // FACTORY HELPERS
-        // ============================================================
 
         CardData MakeCardData(string name, CardType type, int cost,
             (int mag, DamageType dtype)[] dmgEffects = null,
@@ -1301,10 +1160,6 @@ namespace CardGame
             return data;
         }
 
-        // ============================================================
-        // LOG
-        // ============================================================
-
         void DrawLog(float height)
         {
             GUILayout.Space(7);
@@ -1320,10 +1175,6 @@ namespace CardGame
             _logScroll.y = float.MaxValue;
             Debug.Log($"[Harness] {msg}");
         }
-
-        // ============================================================
-        // GUI STYLE HELPERS
-        // ============================================================
 
         GUIStyle Bold(int size = 14)
         {
