@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 47c7b8040c562d64792cd718e61b0f50, type: 3}
+  m_Name: Slash
+  m_EditorClassIdentifier: Assembly-CSharp::CardGame.CardData
+  cardName: Slash
+  cardID: slash
+  cardType: 0
+  rarity: 0
+  owner: 1
+  energyCost: 2
+  innate: 0
+  exhaust: 0
+  retain: 0
+  unplayable: 0
+  effects:
+  - {fileID: 11400000, guid: 3fb5461ec81ac774eb628d78a80d3a86, type: 2}
+  tier: 0
+  tier1Version: {fileID: 0}
+  tier2Version: {fileID: 0}
+  cardArtwork: {fileID: 0}
+  cardFrame: {fileID: 0}
+  unlockID: 
