@@ -9,9 +9,9 @@ namespace CardGame
     public class CombatManager : MonoBehaviour
     {
         [Header("References")]
-        public DeckManager    deckManager;
-        public RewardConfig   rewardConfig;
-        public DefenseConfig  defenseConfig;
+        public DeckManager deckManager;
+        public RewardConfig rewardConfig;
+        public DefenseConfig defenseConfig;
 
         [Header("Settings")]
         [Tooltip("Cards drawn at the start of each player turn.")]
@@ -26,22 +26,19 @@ namespace CardGame
         public CombatState CurrentState { get; private set; } = CombatState.Idle;
         public bool IsQueueProcessing => _cardQueue != null && _cardQueue.IsProcessing;
 
-        private CombatContext       _ctx;
-        private CombatEntity        _player;
+        private CombatContext _ctx;
+        private CombatEntity _player;
         private List<EnemyInstance> _enemies = new List<EnemyInstance>();
-        private int                 _turnNumber = 0;
-        private CardQueue           _cardQueue;
-        private bool                _combatActive;    // Lets CardQueue know if combat is live
+        private int _turnNumber = 0;
+        private CardQueue _cardQueue;
+        private bool _combatActive;    // Lets CardQueue know if combat is live
 
         private bool _playerEndedTurn = false;
 
         private Action<List<CardInstance>> _pendingSelectionCallback;
 
-        private List<CardData>   _availableCardPool = new List<CardData>();
-        private CharacterClass   _playerClass;
-
-        public event Action<CombatResult> OnCombatComplete;
-
+        private List<CardData> _availableCardPool = new List<CardData>();
+        private CharacterClass _playerClass;
         public event Action<CombatState> OnStateChanged;
 
         #region States
@@ -60,14 +57,14 @@ namespace CardGame
         }
 
         public void StartCombat(
-            List<EnemyData>  enemyDataList,
+            List<EnemyData> enemyDataList,
             List<CardInstance> playerDeck,
-            CombatEntity     playerEntity,
-            List<CardData>   cardPool,
-            CharacterClass   playerClass)
+            CombatEntity playerEntity,
+            List<CardData> cardPool,
+            CharacterClass playerClass)
         {
-            _player       = playerEntity;
-            _playerClass  = playerClass;
+            _player = playerEntity;
+            _playerClass = playerClass;
             _availableCardPool = cardPool;
             _enemies.Clear();
             _turnNumber = 0;
@@ -76,20 +73,20 @@ namespace CardGame
                 _enemies.Add(new EnemyInstance(data));
 
             _ctx = new CombatContext(
-                player:        _player,
-                enemies:       BuildEntityList(),
-                deckManager:   deckManager,
+                player: _player,
+                enemies: BuildEntityList(),
+                deckManager: deckManager,
                 currentEnergy: energyPerTurn,
-                maxEnergy:     energyPerTurn,
-                currentGold:   0           // RunManager owns gold
+                maxEnergy: energyPerTurn,
+                currentGold: 0           // RunManager owns gold
             );
             _combatActive = true;
             _cardQueue.Initialize(_ctx, deckManager, () => _combatActive);
 
             deckManager.InitializeCombat(playerDeck);
 
-            CombatEvents.RequestDiscardSelection   += HandleDiscardRequest;
-            CombatEvents.RequestExhaustSelection   += HandleExhaustRequest;
+            CombatEvents.RequestDiscardSelection += HandleDiscardRequest;
+            CombatEvents.RequestExhaustSelection += HandleExhaustRequest;
             CombatEvents.RequestAddRandomCardToHand += HandleAddRandomCard;
 
             _player.OnDeath += OnPlayerDied;
@@ -119,7 +116,7 @@ namespace CardGame
 
                 // ── CHECK STATE ────────────────────────────────────
                 if (CheckAllEnemiesDead()) yield break;
-                if (CheckPlayerDead())     yield break;
+                if (CheckPlayerDead()) yield break;
             }
         }
         #endregion
@@ -167,14 +164,35 @@ namespace CardGame
 
             foreach (var enemy in _enemies)
             {
-                if (enemy.IsDead) continue; //Dead enemies are still in list
-                if (_player.IsDead) break;
-                
-                yield return new WaitForSeconds(enemyActionDelay); // Visual delay so player can read what's happening
+                // Skip dead enemies — they were alive when the turn started
+                // but may have died from status ticks or other effects
+                if (enemy.IsDead) continue;
+
+                // Stop if player died mid-turn
+                if (_player.IsDead) yield break;
+
+                // Stop if combat ended mid-turn (e.g. DoVictory was triggered
+                // by OnCardQueueEmpty during a status tick that killed the last enemy)
+                if (!_combatActive) yield break;
+
+                yield return new WaitForSeconds(enemyActionDelay);
+
+                // Re-check after the delay — status ticks can kill between frames
+                if (enemy.IsDead) continue;
+                if (_player.IsDead) yield break;
+                if (!_combatActive) yield break;
 
                 enemy.Entity.ProcessStartOfTurnStatuses();
                 enemy.ExecuteIntent(_ctx);
                 enemy.Entity.ProcessEndOfTurnStatuses();
+
+                // Check if this enemy's action killed all remaining enemies
+                // (e.g. a self-destruct or reflect damage scenario)
+                bool anyAlive = false;
+                foreach (var e in _enemies)
+                    if (!e.IsDead) { anyAlive = true; break; }
+
+                if (!anyAlive) yield break;
 
                 CombatEvents.OnEnemyTurnEnd?.Invoke();
             }
@@ -241,7 +259,7 @@ namespace CardGame
 
             TransitionTo(CombatState.Defeat);
             CombatEvents.OnPlayerDeath?.Invoke();
-            OnCombatComplete?.Invoke(new CombatResult(false, 0, null));
+            CombatEvents.OnCombatComplete?.Invoke(new CombatResult(false, 0, null));
             Cleanup();
             return true;
         }
@@ -270,16 +288,17 @@ namespace CardGame
         }
         private IEnumerator DoVictory()
         {
+            _combatActive = false;   // Signals DoEnemyTurn to stop if still running
             TransitionTo(CombatState.Victory);
             CombatEvents.OnCombatVictory?.Invoke();
 
             yield return new WaitForSeconds(0.5f);  // Brief pause before reward
 
             bool isElite = false;
-            bool isBoss  = false;
+            bool isBoss = false;
             foreach (var e in _enemies)
             {
-                if (e.Data.isBoss)  isBoss  = true;
+                if (e.Data.isBoss) isBoss = true;
                 if (e.Data.isElite) isElite = true;
             }
 
@@ -288,7 +307,7 @@ namespace CardGame
             TransitionTo(CombatState.Reward);
 
             // Combat is functionally complete — hand reward to RunManager
-            OnCombatComplete?.Invoke(new CombatResult(true, reward.GoldReward, reward));
+            CombatEvents.OnCombatComplete?.Invoke(new CombatResult(true, reward.GoldReward, reward));
             Cleanup();
         }
         #endregion
@@ -298,17 +317,17 @@ namespace CardGame
         {
             // Gold
             Vector2Int goldRange = isElite ? rewardConfig.eliteCombatGold
-                                 : isBoss  ? rewardConfig.bossCombatGold
+                                 : isBoss ? rewardConfig.bossCombatGold
                                            : rewardConfig.normalCombatGold;
             int gold = RewardHooks.ApplyGoldModifiers(UnityEngine.Random.Range(goldRange.x, goldRange.y + 1));
 
             // Card choices
             int count = isElite ? rewardConfig.eliteCardChoices
-                      : isBoss  ? rewardConfig.bossCardChoices
+                      : isBoss ? rewardConfig.bossCardChoices
                                 : rewardConfig.normalCardChoices;
 
             Vector3 weights = isElite ? rewardConfig.eliteRarityWeights
-                            : isBoss  ? rewardConfig.bossRarityWeights
+                            : isBoss ? rewardConfig.bossRarityWeights
                                       : rewardConfig.normalRarityWeights;
 
             var cards = PickCardRewards(count, weights);
@@ -331,8 +350,8 @@ namespace CardGame
 
         private List<CardData> PickCardRewards(int count, Vector3 rarityWeights)
         {
-            var result  = new List<CardData>();
-            var used    = new HashSet<string>();
+            var result = new List<CardData>();
+            var used = new HashSet<string>();
 
             // Filter pool to player's class + neutral
             var pool = new List<CardData>();
@@ -453,8 +472,9 @@ namespace CardGame
         }
         private void Cleanup()
         {
-            CombatEvents.RequestDiscardSelection    -= HandleDiscardRequest;
-            CombatEvents.RequestExhaustSelection    -= HandleExhaustRequest;
+            _combatActive = false;
+            CombatEvents.RequestDiscardSelection -= HandleDiscardRequest;
+            CombatEvents.RequestExhaustSelection -= HandleExhaustRequest;
             CombatEvents.RequestAddRandomCardToHand -= HandleAddRandomCard;
 
             _player.OnDeath -= OnPlayerDied;
@@ -478,15 +498,15 @@ namespace CardGame
 
     public class CombatResult
     {
-        public bool            WasVictory  { get; }
-        public int             GoldEarned  { get; }
-        public CombatRewardSet Reward      { get; }
+        public bool WasVictory { get; }
+        public int GoldEarned { get; }
+        public CombatRewardSet Reward { get; }
 
         public CombatResult(bool victory, int gold, CombatRewardSet reward)
         {
             WasVictory = victory;
             GoldEarned = gold;
-            Reward     = reward;
+            Reward = reward;
         }
     }
 }

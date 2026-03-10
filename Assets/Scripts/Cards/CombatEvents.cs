@@ -1,20 +1,3 @@
-// ============================================================
-//  CombatEvents.cs
-//  A lightweight static event bus for combat-related signals.
-//
-//  WHY this exists:
-//    Card effects need to trigger UI behaviours (e.g. "ask the
-//    player to choose a card to discard") without directly
-//    referencing UI code. This bus decouples them completely.
-//
-//  How to use:
-//    Subscribe:   CombatEvents.OnEnemyKilled += HandleEnemyKilled;
-//    Unsubscribe: CombatEvents.OnEnemyKilled -= HandleEnemyKilled;
-//    Invoke:      CombatEvents.OnEnemyKilled?.Invoke(entity);
-//
-//  Unsubscribe in OnDisable/OnDestroy to avoid memory leaks.
-// ============================================================
-
 using System;
 
 namespace CardGame
@@ -33,6 +16,7 @@ namespace CardGame
 
         public static Action<CombatEntity>           OnEnemyKilled;
         public static Action                         OnPlayerDeath;
+        public static Action<CombatResult>           OnCombatComplete;
         public static Action                         OnCombatVictory;
 
         public static Action<CombatEntity, int>      OnDamageDealt;        // (target, amount)
@@ -65,6 +49,7 @@ namespace CardGame
             OnCardExhaustedGlobal     = null;
             OnEnemyKilled             = null;
             OnPlayerDeath             = null;
+            OnCombatComplete          = null;
             OnCombatVictory           = null;
             OnDamageDealt             = null;
             OnBlockGained             = null;

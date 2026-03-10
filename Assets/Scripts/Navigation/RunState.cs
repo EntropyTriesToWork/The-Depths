@@ -155,7 +155,7 @@ namespace CardGame
         public bool HasRelic(string relicID)
         {
             foreach (var r in _relics)
-                if (r.Data.relicID == relicID) return true;
+                if (r.Data.RelicID == relicID) return true;
             return false;
         }
 

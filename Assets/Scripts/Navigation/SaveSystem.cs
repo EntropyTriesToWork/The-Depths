@@ -140,7 +140,7 @@ namespace CardGame
 
             // Relics
             foreach (var relic in runState.Relics)
-                save.relicIDs.Add(relic.Data.relicID);
+                save.relicIDs.Add(relic.Data.RelicID);
 
             return save;
         }

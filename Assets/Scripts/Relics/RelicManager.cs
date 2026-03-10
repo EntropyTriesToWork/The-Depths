@@ -154,14 +154,14 @@ namespace CardGame
         public bool HasRelic(string relicID)
         {
             foreach (var r in _equippedRelics)
-                if (r.Data.relicID == relicID) return true;
+                if (r.Data.RelicID == relicID) return true;
             return false;
         }
 
         public RelicInstance GetRelic(string relicID)
         {
             foreach (var r in _equippedRelics)
-                if (r.Data.relicID == relicID) return r;
+                if (r.Data.RelicID == relicID) return r;
             return null;
         }
 
@@ -175,9 +175,9 @@ namespace CardGame
             foreach (var relic in allRelics)
             {
                 if (relic == null) continue;
-                if (HasRelic(relic.relicID)) continue;
+                if (HasRelic(relic.RelicID)) continue;
                 if (!relic.IsAlwaysUnlocked && !unlockedIDs.Contains(relic.unlockID)) continue;
-                if (rarityFilter.HasValue && relic.rarity != rarityFilter.Value) continue;
+                if (rarityFilter.HasValue && relic.Rarity != rarityFilter.Value) continue;
                 result.Add(relic);
             }
             return result;

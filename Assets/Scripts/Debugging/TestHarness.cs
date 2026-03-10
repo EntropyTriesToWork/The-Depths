@@ -115,7 +115,7 @@ namespace CardGame
             _combatManager.defenseConfig = defenseConfig;
 
             _combatManager.OnStateChanged += s => Log($"  → Combat state: {s}");
-            _combatManager.OnCombatComplete += HandleCombatComplete;
+            CombatEvents.OnCombatComplete += HandleCombatComplete;
 
             _deckManager.OnCardDrawn += c => Log($"  Drew: {c.Data.cardName}");
             _deckManager.OnCardDiscarded += c => Log($"  Discarded: {c.Data.cardName}");

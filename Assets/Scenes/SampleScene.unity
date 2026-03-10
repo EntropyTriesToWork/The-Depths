@@ -565,7 +565,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CardGame.CombatTestHarness
   defenseConfig: {fileID: 11400000, guid: c3a51824494a7144aa74edc00524d23b, type: 2}
-  characterData: {fileID: 11400000, guid: b54e83009b9006044b65e66bd65c11a7, type: 2}
+  characterData: {fileID: 0}
   cardPool: []
   normalEnemyPool:
   - {fileID: 11400000, guid: 5b95e6daab9a0ee4d9c7c5116bca4b7c, type: 2}

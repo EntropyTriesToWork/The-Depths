@@ -215,7 +215,7 @@ namespace CardGame
         {
             SyncPlayerEntityFromRunState();
 
-            combatManager.OnCombatComplete += HandleCombatComplete;
+            CombatEvents.OnCombatComplete += HandleCombatComplete;
             combatManager.StartCombat(
                 choice.Enemies,
                 RunState.GetDeckCopy(),
@@ -227,7 +227,7 @@ namespace CardGame
 
         private void HandleCombatComplete(CombatResult result)
         {
-            combatManager.OnCombatComplete -= HandleCombatComplete;
+            CombatEvents.OnCombatComplete -= HandleCombatComplete;
             SyncRunStateFromPlayerEntity();
 
             if (!result.WasVictory)
@@ -503,7 +503,7 @@ namespace CardGame
             _characterLookup = new Dictionary<string, CharacterData>();
 
             foreach (var card  in allCards)    if (card  != null) _cardLookup[card.cardID]               = card;
-            foreach (var relic in allRelics)   if (relic != null) _relicLookup[relic.relicID]            = relic;
+            foreach (var relic in allRelics)   if (relic != null) _relicLookup[relic.RelicID]            = relic;
             foreach (var ch   in characters)   if (ch    != null) _characterLookup[ch.characterClass.ToString()] = ch;
         }
 
