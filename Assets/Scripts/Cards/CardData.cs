@@ -1,13 +1,3 @@
-// ============================================================
-//  CardData.cs
-//  The ScriptableObject asset that defines a card.
-//  This is pure DATA — no runtime logic lives here.
-//
-//  To create a new card in Unity:
-//    Right-click in Project → Create → CardGame → Card Data
-//  Then fill in the fields and drag in CardEffect assets.
-// ============================================================
-
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;

@@ -1,4 +1,16 @@
-﻿using System.Collections.Generic;
+// ============================================================
+//  TestHarness.cs
+//  Full run-loop test harness. IMGUI only. No ScriptableObjects
+//  in the inspector — all data comes from Concrete* classes.
+//
+//  SETUP:
+//    1. New empty scene
+//    2. Empty GameObject → Add TestHarness
+//    3. Assign DefenseConfig in Inspector (only required field)
+//    4. Press Play
+// ============================================================
+
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace CardGame
@@ -18,76 +30,75 @@ namespace CardGame
 
     public class TestHarness : MonoBehaviour
     {
+        // ----------------------------------------------------------
+        // Inspector — only what cannot be hardcoded
+        // ----------------------------------------------------------
+
         [Header("Required")]
         public DefenseConfig defenseConfig;
 
-        [Header("Character (optional — uses fallback if empty)")]
-        [Tooltip("Assigns character class, starting HP, and starter deck.")]
-        public CharacterData characterData;
+        [Header("Settings")]
+        public CharacterClass startingCharacter = CharacterClass.Orin;
+        public float          enemyActionDelay  = 0.2f;
 
-        [Header("Card Pool (optional — uses fallback if empty)")]
-        [Tooltip("Cards that can appear as rewards and in the shop.")]
-        public CardData[] cardPool;
+        // ----------------------------------------------------------
+        // Systems
+        // ----------------------------------------------------------
 
-        [Header("Enemy Pools (optional — uses fallback if empty)")]
-        public EnemyData[] normalEnemyPool;
-        public EnemyData[] eliteEnemyPool;
-        public EnemyData[] bossEnemyPool;
-
-        [Header("Events (optional — uses fallback if empty)")]
-        public EventData[] eventPool;
-
-        [Header("Floor Config (optional — uses fallback if empty)")]
-        public FloorConfig floorConfig;
-
-        [Header("Player Stats (used when no CharacterData assigned)")]
-        public int startingHP = 80;
-        public int startingEnergy = 3;
-        public int drawPerTurn = 5;
-
-        private CombatManager _combatManager;
-        private DeckManager _deckManager;
-        private NavigationSystem _navigation;
+        private CombatManager       _combatManager;
+        private DeckManager         _deckManager;
+        private NavigationSystem    _navigation;
         private MysteryRoomResolver _mysteryResolver;
+        private FloorConfig         _floorConfig;
 
-        private HarnessState _state = HarnessState.Navigation;
+        // ----------------------------------------------------------
+        // Run state
+        // ----------------------------------------------------------
+
+        private HarnessState _state       = HarnessState.Navigation;
         private HarnessState _returnState = HarnessState.Navigation;
 
-        private int _currentHP;
-        private int _maxHP;
-        private int _gold;
-        private int _floor = 1;
-        private int _roomsCleared = 0;
+        private CharacterDefinition    _charDef;
+        private int                    _currentHP;
+        private int                    _maxHP;
+        private int                    _gold;
+        private int                    _floor        = 1;
+        private int                    _roomsCleared = 0;
 
-        private CharacterClass _playerClass = CharacterClass.Orin;
-        private List<CardInstance> _masterDeck = new List<CardInstance>();
-        private CombatEntity _playerEntity;
+        private List<CardInstance>     _masterDeck  = new();
+        private List<CardData>         _cardPool    = new();
+        private CombatEntity           _playerEntity;
 
-        private List<RoomChoice> _currentChoices = new List<RoomChoice>();
-        private RoomChoice _activeChoice;
-        private List<EnemyInstance> _activeEnemies = new List<EnemyInstance>();
+        // ----------------------------------------------------------
+        // Per-room state
+        // ----------------------------------------------------------
+
+        private List<RoomChoice>    _currentChoices = new();
+        private RoomChoice          _activeChoice;
+        private List<EnemyInstance> _activeEnemies  = new();
 
         // Reward
-        private List<CardData> _rewardChoices = new List<CardData>();
+        private List<CardData> _rewardChoices = new();
 
         // Shop
-        private List<CardData> _shopCards = new List<CardData>();
+        private List<CardData>                                       _shopCards   = new();
         private List<(string label, int cost, System.Action action)> _shopActions = new();
 
         // Event
         private EventData _activeEvent;
 
-        private List<CardData> _runtimeCardPool = new List<CardData>();
-        private List<EnemyData> _runtimeNormalPool = new List<EnemyData>();
-        private List<EnemyData> _runtimeElitePool = new List<EnemyData>();
-        private List<EnemyData> _runtimeBossPool = new List<EnemyData>();
-        private List<EventData> _runtimeEventPool = new List<EventData>();
-        private FloorConfig _runtimeFloorConfig;
+        // ----------------------------------------------------------
+        // IMGUI scroll state
+        // ----------------------------------------------------------
 
         private Vector2 _logScroll;
         private Vector2 _handScroll;
         private Vector2 _deckScroll;
-        private string _log = "";
+        private string  _log = "";
+
+        // ============================================================
+        // UNITY LIFECYCLE
+        // ============================================================
 
         void Awake()
         {
@@ -97,60 +108,52 @@ namespace CardGame
                 Log("⚠ No DefenseConfig assigned — using defaults.");
             }
 
-            // Build runtime pools (SO data takes priority, fallbacks fill gaps)
-            BuildRuntimePools();
-            BuildRuntimeFloorConfig();
+            // Character
+            _charDef   = ConcreteCharacters.Get(startingCharacter);
+            _maxHP     = _charDef.BaseHP;
+            _currentHP = _maxHP;
+            _gold      = 99;
+
+            // Starter deck and card pool from Concrete
+            _masterDeck.AddRange(_charDef.BuildStarterDeck());
+            _cardPool.AddRange(ConcreteCharacters.GetCardPool(startingCharacter));
+
+            Log($"✓ Character: {_charDef.CharacterName}  HP:{_maxHP}  " +
+                $"Deck:{_masterDeck.Count}  Pool:{_cardPool.Count} cards");
 
             // Unity components
-            var deckGO = new GameObject("DeckManager");
-            _deckManager = deckGO.AddComponent<DeckManager>();
+            var deckGO     = new GameObject("DeckManager");
+            _deckManager   = deckGO.AddComponent<DeckManager>();
             _deckManager.maxHandSize = 10;
 
-            var cmGO = new GameObject("CombatManager");
+            var cmGO       = new GameObject("CombatManager");
             _combatManager = cmGO.AddComponent<CombatManager>();
-            _combatManager.deckManager = _deckManager;
-            _combatManager.cardsDrawnPerTurn = drawPerTurn;
-            _combatManager.energyPerTurn = startingEnergy;
-            _combatManager.enemyActionDelay = 0.2f;
-            _combatManager.defenseConfig = defenseConfig;
+            _combatManager.deckManager       = _deckManager;
+            _combatManager.cardsDrawnPerTurn = _charDef.CardsDrawn;
+            _combatManager.energyPerTurn     = _charDef.BaseEnergy;
+            _combatManager.enemyActionDelay  = enemyActionDelay;
+            _combatManager.defenseConfig     = defenseConfig;
 
-            _combatManager.OnStateChanged += s => Log($"  → Combat state: {s}");
+            _combatManager.OnStateChanged   += s => Log($"  → Combat state: {s}");
             CombatEvents.OnCombatComplete += HandleCombatComplete;
 
-            _deckManager.OnCardDrawn += c => Log($"  Drew: {c.Data.cardName}");
-            _deckManager.OnCardDiscarded += c => Log($"  Discarded: {c.Data.cardName}");
+            _deckManager.OnCardDrawn      += c  => Log($"  Drew: {c.Data.cardName}");
+            _deckManager.OnCardDiscarded  += c  => Log($"  Discarded: {c.Data.cardName}");
             _deckManager.OnDeckReshuffled += () => Log("  🔀 Reshuffled");
 
-            // Navigation
-            _navigation = new NavigationSystem(_runtimeFloorConfig);
-            _navigation.InitializeFloor(_runtimeFloorConfig);
-            _mysteryResolver = new MysteryRoomResolver(_runtimeFloorConfig);
-
-            // Player setup
-            if (characterData != null)
-            {
-                _maxHP = characterData.baseHP;
-                _playerClass = characterData.characterClass;
-                foreach (var card in characterData.starterDeck)
-                    _masterDeck.Add(new CardInstance(card));
-
-                Log($"✓ Character: {characterData.characterName} ({_playerClass}), {_maxHP} HP, " +
-                    $"{_masterDeck.Count} starter cards");
-            }
-            else
-            {
-                _maxHP = startingHP;
-                _playerClass = CharacterClass.Orin;
-                BuildFallbackStarterDeck();
-                Log($"✓ No CharacterData assigned — using fallback stats ({_maxHP} HP)");
-            }
-
-            _currentHP = _maxHP;
-            _gold = 99;
+            // Floor config and navigation — built entirely in code
+            _floorConfig     = BuildFloorConfig();
+            _navigation      = new NavigationSystem(_floorConfig);
+            _navigation.InitializeFloor(_floorConfig);
+            _mysteryResolver = new MysteryRoomResolver(_floorConfig);
 
             Log("✓ Harness ready.");
             GoToNavigation();
         }
+
+        // ============================================================
+        // IMGUI — MAIN DISPATCHER
+        // ============================================================
 
         void OnGUI()
         {
@@ -160,18 +163,22 @@ namespace CardGame
             switch (_state)
             {
                 case HarnessState.Navigation: DrawNavigation(); break;
-                case HarnessState.Combat: DrawCombat(); break;
-                case HarnessState.Reward: DrawReward(); break;
-                case HarnessState.Shop: DrawShop(); break;
-                case HarnessState.Rest: DrawRest(); break;
-                case HarnessState.Event: DrawEvent(); break;
+                case HarnessState.Combat:     DrawCombat();     break;
+                case HarnessState.Reward:     DrawReward();     break;
+                case HarnessState.Shop:       DrawShop();       break;
+                case HarnessState.Rest:       DrawRest();       break;
+                case HarnessState.Event:      DrawEvent();      break;
                 case HarnessState.DeckReview: DrawDeckReview(); break;
-                case HarnessState.Victory: DrawVictory(); break;
-                case HarnessState.Defeat: DrawDefeat(); break;
+                case HarnessState.Victory:    DrawVictory();    break;
+                case HarnessState.Defeat:     DrawDefeat();     break;
             }
 
             GUILayout.EndArea();
         }
+
+        // ============================================================
+        // TOP BAR
+        // ============================================================
 
         void DrawTopBar()
         {
@@ -179,8 +186,8 @@ namespace CardGame
             GUILayout.BeginArea(new Rect(8, 6, Screen.width - 16, 52));
             GUILayout.BeginHorizontal();
 
-            GUILayout.Label($"❤ {_currentHP}/{_maxHP}", Bold(17), GUILayout.Width(132));
-            GUILayout.Label($"💰 {_gold}g", Bold(17), GUILayout.Width(96));
+            GUILayout.Label($"❤ {_currentHP}/{_maxHP}",  Bold(17), GUILayout.Width(132));
+            GUILayout.Label($"💰 {_gold}g",               Bold(17), GUILayout.Width(96));
             GUILayout.Label(
                 $"Floor {_floor}  |  Room {_roomsCleared + 1}/{_navigation.TotalRoomsThisFloor}",
                 Bold(17), GUILayout.Width(240));
@@ -196,7 +203,7 @@ namespace CardGame
             if (canReview && GUILayout.Button("📖 Deck", GUILayout.Height(43), GUILayout.Width(96)))
             {
                 _returnState = _state;
-                _state = HarnessState.DeckReview;
+                _state       = HarnessState.DeckReview;
             }
 
             if (_state == HarnessState.DeckReview
@@ -206,6 +213,10 @@ namespace CardGame
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
         }
+
+        // ============================================================
+        // NAVIGATION
+        // ============================================================
 
         void DrawNavigation()
         {
@@ -265,8 +276,8 @@ namespace CardGame
 
             RoomType effective = choice.RoomType == RoomType.Mystery
                 ? (choice.MysteryOutcome == MysteryOutcome.NormalCombat ? RoomType.NormalCombat
-                : choice.MysteryOutcome == MysteryOutcome.Shop ? RoomType.Shop
-                : RoomType.Mystery)
+                :  choice.MysteryOutcome == MysteryOutcome.Shop         ? RoomType.Shop
+                :  RoomType.Mystery)
                 : choice.RoomType;
 
             Log($"▶ Entering: {choice.Label}");
@@ -306,6 +317,10 @@ namespace CardGame
             }
         }
 
+        // ============================================================
+        // COMBAT
+        // ============================================================
+
         void StartCombat(RoomChoice choice)
         {
             _state = HarnessState.Combat;
@@ -321,13 +336,13 @@ namespace CardGame
 
             var enemyDataList = choice.Enemies.Count > 0
                 ? choice.Enemies
-                : new List<EnemyData> { _runtimeNormalPool[0] };
+                : EnemyDefinitionHelper.ToDataList(ConcreteEnemies.All()).GetRange(0, 1);
 
             foreach (var eData in enemyDataList)
             {
-                var inst = new EnemyInstance(eData);
+                var inst = new EnemyInstance(eData, defenseConfig);
                 inst.Entity.OnDamageTaken += bd => Log($"  {eData.enemyName} hit — total:{bd.TotalDamage}");
-                inst.Entity.OnDeath += () => Log($"  ☠ {eData.enemyName} defeated!");
+                inst.Entity.OnDeath       += () => Log($"  ☠ {eData.enemyName} defeated!");
                 _activeEnemies.Add(inst);
             }
 
@@ -337,8 +352,8 @@ namespace CardGame
                 enemyDataList,
                 new List<CardInstance>(_masterDeck),
                 _playerEntity,
-                _runtimeCardPool,
-                _playerClass
+                _cardPool,
+                _charDef.Class
             );
         }
 
@@ -354,8 +369,8 @@ namespace CardGame
             if (_playerEntity != null)
             {
                 GUILayout.Label($"HP:      {_playerEntity.CurrentHealth} / {_playerEntity.MaxHealth}", Style(14));
-                GUILayout.Label($"Block:   {_playerEntity.CurrentBlock}", Style(14));
-                GUILayout.Label($"Armor:   {_playerEntity.CurrentArmor}", Style(14));
+                GUILayout.Label($"Block:   {_playerEntity.CurrentBlock}",   Style(14));
+                GUILayout.Label($"Armor:   {_playerEntity.CurrentArmor}",   Style(14));
                 GUILayout.Label($"Barrier: {_playerEntity.CurrentBarrier}", Style(14));
                 foreach (var kv in _playerEntity.GetAllStatuses())
                     GUILayout.Label($"  {kv.Key}: {kv.Value}", Style(13));
@@ -367,7 +382,6 @@ namespace CardGame
             GUILayout.Label("── ENEMIES ──", Bold(14));
             foreach (var enemy in _activeEnemies)
             {
-                // DEAD ENEMY FIX: skip display of dead enemies cleanly
                 if (enemy.IsDead)
                 {
                     GUILayout.Label($"[{enemy.Data.enemyName}: DEAD]", Style(13));
@@ -377,10 +391,7 @@ namespace CardGame
                 GUILayout.Label(enemy.Data.enemyName, Bold(14));
                 GUILayout.Label($"  HP:    {enemy.Entity.CurrentHealth}/{enemy.Entity.MaxHealth}", Style(13));
                 GUILayout.Label($"  Block: {enemy.Entity.CurrentBlock}", Style(13));
-
-                // Intent
-                string intentLine = BuildIntentDisplay(enemy.CurrentIntent);
-                GUILayout.Label(intentLine, Bold(13));
+                GUILayout.Label(BuildIntentDisplay(enemy.CurrentIntent), Bold(13));
 
                 foreach (var kv in enemy.Entity.GetAllStatuses())
                     GUILayout.Label($"  {kv.Key}: {kv.Value}", Style(13));
@@ -403,9 +414,9 @@ namespace CardGame
             _handScroll = GUILayout.BeginScrollView(_handScroll, GUILayout.Height(216));
             foreach (var card in _deckManager.Hand)
             {
-                int cost = card.GetEffectiveCost();
+                int  cost    = card.GetEffectiveCost();
                 bool canPlay = isPlayerTurn && cost <= _combatManager.GetCurrentEnergy();
-                GUI.enabled = canPlay;
+                GUI.enabled  = canPlay;
                 if (GUILayout.Button($"[{cost}e] {card.Data.cardName}", GUILayout.Height(34)))
                     PlayCard(card);
                 GUI.enabled = true;
@@ -448,12 +459,11 @@ namespace CardGame
 
             _roomsCleared++;
 
-            // Gold from combat result + room-type bonus
             int goldEarned = result.GoldEarned + GoldBonusForRoom(_activeChoice?.RoomType ?? RoomType.NormalCombat);
             _gold += goldEarned;
             Log($"\n🏆 Victory!  +{goldEarned}g  (total: {_gold}g)");
 
-            // Always show reward screen — roll cards if CombatManager returned none
+            // Always show reward — use CombatManager result, or roll from card pool directly
             _rewardChoices.Clear();
 
             if (result.Reward?.CardChoices != null && result.Reward.CardChoices.Count > 0)
@@ -462,12 +472,12 @@ namespace CardGame
             }
             else
             {
-                var pool = new List<CardData>(_runtimeCardPool);
-                var used = new HashSet<string>();
+                var pool     = new List<CardData>(_cardPool);
+                var used     = new HashSet<string>();
                 int attempts = 0;
                 while (_rewardChoices.Count < 3 && pool.Count > 0 && attempts++ < 30)
                 {
-                    int idx = Random.Range(0, pool.Count);
+                    int      idx  = Random.Range(0, pool.Count);
                     CardData pick = pool[idx];
                     pool.RemoveAt(idx);
                     if (used.Contains(pick.cardID)) continue;
@@ -478,6 +488,10 @@ namespace CardGame
 
             _state = HarnessState.Reward;
         }
+
+        // ============================================================
+        // REWARD
+        // ============================================================
 
         void DrawReward()
         {
@@ -517,13 +531,17 @@ namespace CardGame
             DrawLog(108);
         }
 
+        // ============================================================
+        // SHOP
+        // ============================================================
+
         void OpenShop()
         {
             _state = HarnessState.Shop;
             _shopCards.Clear();
             _shopActions.Clear();
 
-            var pool = new List<CardData>(_runtimeCardPool);
+            var pool = new List<CardData>(_cardPool);
             for (int i = 0; i < 3 && pool.Count > 0; i++)
             {
                 int idx = Random.Range(0, pool.Count);
@@ -534,14 +552,13 @@ namespace CardGame
             int removeCost = 75;
             _shopActions.Add(("Remove a card from deck", removeCost, () =>
             {
-                if (_gold < removeCost) { Log("✗ Not enough gold"); return; }
-                if (_masterDeck.Count == 0) { Log("✗ Deck is empty"); return; }
+                if (_gold < removeCost)      { Log("✗ Not enough gold"); return; }
+                if (_masterDeck.Count == 0)  { Log("✗ Deck is empty");   return; }
                 _gold -= removeCost;
                 var removed = _masterDeck[Random.Range(0, _masterDeck.Count)];
                 _masterDeck.Remove(removed);
                 Log($"  Removed {removed.Data.cardName} from deck");
-            }
-            ));
+            }));
 
             Log("🛒 Shop open.");
         }
@@ -601,11 +618,15 @@ namespace CardGame
 
         int ShopPrice(CardRarity rarity) => rarity switch
         {
-            CardRarity.Common => 50,
+            CardRarity.Common   => 50,
             CardRarity.Uncommon => 75,
-            CardRarity.Rare => 125,
-            _ => 50
+            CardRarity.Rare     => 125,
+            _                   => 50
         };
+
+        // ============================================================
+        // REST
+        // ============================================================
 
         void DrawRest()
         {
@@ -616,7 +637,6 @@ namespace CardGame
 
             GUILayout.BeginHorizontal();
 
-            // Heal option
             GUILayout.BeginVertical("box", GUILayout.Width(264));
             GUILayout.Label("🔥 Rest & Heal", Bold(17));
             GUILayout.Label(
@@ -636,7 +656,6 @@ namespace CardGame
 
             GUILayout.Space(10);
 
-            // Upgrade option
             GUILayout.BeginVertical("box", GUILayout.Width(264));
             GUILayout.Label("⚒ Upgrade a Card", Bold(17));
             GUILayout.Label("Permanently upgrade one card in your deck.", Style(14));
@@ -669,16 +688,17 @@ namespace CardGame
             DrawLog(108);
         }
 
+        // ============================================================
+        // EVENT
+        // ============================================================
+
         void DrawEvent()
         {
             if (_activeEvent == null)
             {
                 GUILayout.Label("(No event data)", Style(17));
                 if (GUILayout.Button("Continue", GUILayout.Height(38)))
-                {
-                    _roomsCleared++;
-                    PostRoomComplete();
-                }
+                { _roomsCleared++; PostRoomComplete(); }
                 return;
             }
 
@@ -695,13 +715,13 @@ namespace CardGame
                 GUILayout.BeginVertical("box");
                 GUILayout.Label(choice.choiceText, Bold(16));
 
-                if (choice.goldCost > 0) GUILayout.Label($"  Cost: {choice.goldCost}g", Style(13));
-                if (choice.hpCost > 0) GUILayout.Label($"  Cost: {choice.hpCost} HP", Style(13));
-                if (choice.goldReward > 0) GUILayout.Label($"  Gain: {choice.goldReward}g", Style(13));
-                if (choice.hpChange > 0) GUILayout.Label($"  Heal: {choice.hpChange} HP", Style(13));
-                if (choice.hpChange < 0) GUILayout.Label($"  Take: {-choice.hpChange} damage", Style(13));
-                if (choice.gainRandomCard) GUILayout.Label("  Gain a random card", Style(13));
-                if (!canSelect) GUILayout.Label("  [Cannot afford]", Style(13));
+                if (choice.goldCost   > 0) GUILayout.Label($"  Cost: {choice.goldCost}g",       Style(13));
+                if (choice.hpCost     > 0) GUILayout.Label($"  Cost: {choice.hpCost} HP",        Style(13));
+                if (choice.goldReward > 0) GUILayout.Label($"  Gain: {choice.goldReward}g",      Style(13));
+                if (choice.hpChange   > 0) GUILayout.Label($"  Heal: {choice.hpChange} HP",      Style(13));
+                if (choice.hpChange   < 0) GUILayout.Label($"  Take: {-choice.hpChange} damage", Style(13));
+                if (choice.gainRandomCard) GUILayout.Label("  Gain a random card",               Style(13));
+                if (!canSelect)            GUILayout.Label("  [Cannot afford]",                  Style(13));
 
                 if (GUILayout.Button("Choose", GUILayout.Height(34)))
                     ResolveEventChoice(choice);
@@ -716,16 +736,16 @@ namespace CardGame
 
         bool CanAffordEventChoice(EventChoice choice)
         {
-            if (choice.goldCost > 0 && _gold < choice.goldCost) return false;
-            if (choice.hpCost > 0 && _currentHP <= choice.hpCost) return false;
+            if (choice.goldCost > 0 && _gold      < choice.goldCost) return false;
+            if (choice.hpCost   > 0 && _currentHP <= choice.hpCost)  return false;
             return true;
         }
 
         void ResolveEventChoice(EventChoice choice)
         {
-            if (choice.goldCost > 0) _gold -= choice.goldCost;
-            if (choice.hpCost > 0) _currentHP -= choice.hpCost;
-            if (choice.goldReward > 0) _gold += choice.goldReward;
+            if (choice.goldCost   > 0) _gold      -= choice.goldCost;
+            if (choice.hpCost     > 0) _currentHP -= choice.hpCost;
+            if (choice.goldReward > 0) _gold      += choice.goldReward;
 
             if (choice.essenceReward > 0)
                 Log($"  +{choice.essenceReward} Essence (not tracked in harness)");
@@ -736,14 +756,13 @@ namespace CardGame
                 if (_currentHP <= 0) { _state = HarnessState.Defeat; return; }
             }
 
-            if (choice.gainRandomCard && _runtimeCardPool.Count > 0)
+            if (choice.gainRandomCard && _cardPool.Count > 0)
             {
-                var card = _runtimeCardPool[Random.Range(0, _runtimeCardPool.Count)];
+                var card = _cardPool[Random.Range(0, _cardPool.Count)];
                 _masterDeck.Add(new CardInstance(card));
                 Log($"  + Gained {card.cardName}");
             }
 
-            // Small gold bonus for completing an event room
             int bonus = GoldBonusForRoom(RoomType.Mystery);
             if (bonus > 0) { _gold += bonus; Log($"  +{bonus}g (event completion)"); }
 
@@ -752,20 +771,23 @@ namespace CardGame
             PostRoomComplete();
         }
 
+        // ============================================================
+        // TREASURE
+        // ============================================================
+
         void OpenTreasure()
         {
             _rewardChoices.Clear();
-            var used = new HashSet<string>();
+            var used     = new HashSet<string>();
             int attempts = 0;
-            while (_rewardChoices.Count < 3 && _runtimeCardPool.Count > 0 && attempts++ < 30)
+            while (_rewardChoices.Count < 3 && _cardPool.Count > 0 && attempts++ < 30)
             {
-                var pick = _runtimeCardPool[Random.Range(0, _runtimeCardPool.Count)];
+                var pick = _cardPool[Random.Range(0, _cardPool.Count)];
                 if (used.Contains(pick.cardID)) continue;
                 _rewardChoices.Add(pick);
                 used.Add(pick.cardID);
             }
 
-            // Treasure rooms also give some gold
             int gold = GoldBonusForRoom(RoomType.Treasure);
             if (gold > 0) { _gold += gold; Log($"  Found {gold}g in the treasure room!"); }
 
@@ -773,6 +795,10 @@ namespace CardGame
             _state = HarnessState.Reward;
             Log("💎 Treasure room — pick a card.");
         }
+
+        // ============================================================
+        // DECK REVIEW OVERLAY
+        // ============================================================
 
         void DrawDeckReview()
         {
@@ -791,25 +817,28 @@ namespace CardGame
             foreach (var card in sorted)
             {
                 GUILayout.BeginHorizontal("box");
-                string tier = card.CurrentTier != UpgradeTier.Base
-                    ? $" +{(int)card.CurrentTier}" : "";
-                GUILayout.Label($"[{card.GetEffectiveCost()}e]", Bold(14), GUILayout.Width(42));
-                GUILayout.Label(card.Data.cardName + tier, Bold(14), GUILayout.Width(192));
-                GUILayout.Label(card.Data.cardType.ToString(), Style(13), GUILayout.Width(72));
-                GUILayout.Label(card.Data.rarity.ToString(), Style(13), GUILayout.Width(84));
-                GUILayout.Label(card.Data.BuildDescription(), Style(13));
+                string tier = card.CurrentTier != UpgradeTier.Base ? $" +{(int)card.CurrentTier}" : "";
+                GUILayout.Label($"[{card.GetEffectiveCost()}e]",  Bold(14),  GUILayout.Width(42));
+                GUILayout.Label(card.Data.cardName + tier,         Bold(14),  GUILayout.Width(192));
+                GUILayout.Label(card.Data.cardType.ToString(),     Style(13), GUILayout.Width(72));
+                GUILayout.Label(card.Data.rarity.ToString(),       Style(13), GUILayout.Width(84));
+                GUILayout.Label(card.Data.BuildDescription(),      Style(13));
                 GUILayout.EndHorizontal();
             }
             GUILayout.EndScrollView();
         }
 
+        // ============================================================
+        // VICTORY / DEFEAT
+        // ============================================================
+
         void DrawVictory()
         {
             GUILayout.Label("🏆  VICTORY — Run Complete!", Bold(24));
             GUILayout.Space(12);
-            GUILayout.Label($"Floors cleared:  {_floor}", Style(17));
-            GUILayout.Label($"Rooms cleared:   {_roomsCleared}", Style(17));
-            GUILayout.Label($"Gold remaining:  {_gold}g", Style(17));
+            GUILayout.Label($"Floors cleared:  {_floor}",                Style(17));
+            GUILayout.Label($"Rooms cleared:   {_roomsCleared}",         Style(17));
+            GUILayout.Label($"Gold remaining:  {_gold}g",                Style(17));
             GUILayout.Label($"Final deck:      {_masterDeck.Count} cards", Style(17));
             GUILayout.Space(20);
             if (GUILayout.Button("Play Again", GUILayout.Height(48), GUILayout.Width(180)))
@@ -828,21 +857,21 @@ namespace CardGame
                     UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
         }
 
+        // ============================================================
+        // ROOM COMPLETION
+        // ============================================================
+
         void PostRoomComplete()
         {
             if (_activeChoice?.RoomType == RoomType.Boss)
             {
                 _floor++;
                 _roomsCleared = 0;
-                _navigation.InitializeFloor(_runtimeFloorConfig);
+                _navigation.InitializeFloor(_floorConfig);
                 Log($"\n🏁 Floor cleared! Advancing to floor {_floor}...");
             }
 
-            if (_floor > 3)
-            {
-                _state = HarnessState.Victory;
-                return;
-            }
+            if (_floor > 3) { _state = HarnessState.Victory; return; }
 
             GoToNavigation();
         }
@@ -850,7 +879,7 @@ namespace CardGame
         void GoToNavigation()
         {
             _currentChoices = _navigation.GenerateChoices(BuildFakeRunState());
-            _state = HarnessState.Navigation;
+            _state          = HarnessState.Navigation;
 
             Log($"\n── Navigation  |  Floor {_floor}  Room {_roomsCleared + 1}/{_navigation.TotalRoomsThisFloor} ──");
             foreach (var c in _currentChoices)
@@ -859,198 +888,60 @@ namespace CardGame
 
         RunState BuildFakeRunState()
         {
-            var rs = new RunState(_playerClass, _maxHP, _masterDeck);
+            var rs = new RunState(_charDef.Class, _maxHP, _masterDeck);
             rs.SetCurrentHP(_currentHP);
             for (int i = 0; i < _roomsCleared; i++) rs.AdvanceRoom();
             return rs;
         }
 
-        int GoldBonusForRoom(RoomType type) => type switch
+        // ============================================================
+        // FLOOR CONFIG — built entirely in code from Concrete pools
+        // ============================================================
+
+        FloorConfig BuildFloorConfig()
         {
-            RoomType.NormalCombat => 0,         // CombatResult already handles this
-            RoomType.EliteCombat => 15,        // Extra on top of CombatResult gold
-            RoomType.Boss => 30,        // Extra on top of CombatResult gold
-            RoomType.Shop => 0,
-            RoomType.Rest => Random.Range(0, 2) == 0 ? Random.Range(5, 16) : 0,
-            RoomType.Treasure => Random.Range(20, 41),
-            RoomType.Mystery => Random.Range(5, 16),  // Event completion bonus
-            _ => 0
-        };
+            var cfg = ScriptableObject.CreateInstance<FloorConfig>();
+            cfg.floorName   = "Floor";
+            cfg.floorNumber = 1;
+            cfg.minRooms    = 5;
+            cfg.maxRooms    = 7;
+            cfg.minChoices  = 2;
+            cfg.maxChoices  = 3;
 
-        string BuildIntentDisplay(EnemyAction intent)
-        {
-            if (intent == null) return "  ❓ Unknown";
-            // Uncomment when customIntentDescription is added to EnemyAction:
-            // if (!string.IsNullOrEmpty(intent.customIntentDescription))
-            //     return $"  {IntentIcon(intent.intentType)} {intent.customIntentDescription}";
+            cfg.normalCombatWeight = 40f;
+            cfg.eliteWeight        = 10f;
+            cfg.shopWeight         = 15f;
+            cfg.mysteryWeight      = 20f;
+            cfg.restWeight         = 12f;
+            cfg.treasureWeight     = 3f;
 
-            string icon = IntentIcon(intent.intentType);
-            string name = intent.actionName;
+            cfg.mysteryEventWeight  = 60f;
+            cfg.mysteryCombatWeight = 30f;
+            cfg.mysteryShopWeight   = 10f;
 
-            return intent.intentType switch
-            {
-                EnemyIntent.Attack when intent.hitCount > 1 =>
-                    $"  {icon} {name}  {intent.damage} × {intent.hitCount} = {intent.damage * intent.hitCount} dmg",
+            cfg.guaranteedShopAtRoom  = 3;
+            cfg.eliteUnlockAfterRoom  = 2;
+            cfg.minRoomsBetweenElites = 2;
 
-                EnemyIntent.Attack =>
-                    $"  {icon} {name}  {intent.damage} dmg",
+            cfg.normalEnemyPool = EnemyDefinitionHelper.ToDataList(ConcreteEnemies.All()).ToArray();
+            cfg.eliteEnemyPool  = EnemyDefinitionHelper.ToDataList(ConcreteEliteEnemies.All()).ToArray();
+            cfg.bossEnemies     = EnemyDefinitionHelper.ToDataList(ConcreteBossEnemies.All()).ToArray();
+            cfg.eventPool       = BuildEventPool();
 
-                EnemyIntent.Defend =>
-                    $"  {icon} {name}  +{intent.selfBlock} Block",
-
-                EnemyIntent.Buff =>
-                    $"  {icon} {name}",
-
-                EnemyIntent.Debuff =>
-                    $"  {icon} {name}",
-
-                _ => $"  {icon} {name}"
-            };
-        }
-        void BuildRuntimePools()
-        {
-            // Card pool
-            if (cardPool != null && cardPool.Length > 0)
-            {
-                _runtimeCardPool.AddRange(cardPool);
-                Log($"✓ Card pool: {_runtimeCardPool.Count} cards from ScriptableObjects");
-            }
-            else
-            {
-                BuildFallbackCardPool();
-                Log($"✓ Card pool: {_runtimeCardPool.Count} cards from fallback");
-            }
-
-            // Normal enemies
-            if (normalEnemyPool != null && normalEnemyPool.Length > 0)
-                _runtimeNormalPool.AddRange(normalEnemyPool);
-            else
-                BuildFallbackNormalPool();
-
-            // Elite enemies
-            if (eliteEnemyPool != null && eliteEnemyPool.Length > 0)
-                _runtimeElitePool.AddRange(eliteEnemyPool);
-            else
-                BuildFallbackElitePool();
-
-            // Boss enemies
-            if (bossEnemyPool != null && bossEnemyPool.Length > 0)
-                _runtimeBossPool.AddRange(bossEnemyPool);
-            else
-                BuildFallbackBossPool();
-
-            // Events
-            if (eventPool != null && eventPool.Length > 0)
-                _runtimeEventPool.AddRange(eventPool);
-            else
-                BuildFallbackEventPool();
-
-            Log($"✓ Enemies — Normal:{_runtimeNormalPool.Count} " +
-                $"Elite:{_runtimeElitePool.Count}  Boss:{_runtimeBossPool.Count}");
-            Log($"✓ Events: {_runtimeEventPool.Count}");
+            return cfg;
         }
 
-        void BuildRuntimeFloorConfig()
-        {
-            if (floorConfig != null)
-            {
-                _runtimeFloorConfig = floorConfig;
-                // Override pools with the runtime ones so SO-vs-hardcoded stays consistent
-                _runtimeFloorConfig.normalEnemyPool = _runtimeNormalPool.ToArray();
-                _runtimeFloorConfig.eliteEnemyPool = _runtimeElitePool.ToArray();
-                _runtimeFloorConfig.bossEnemies = _runtimeBossPool.ToArray();
-                _runtimeFloorConfig.eventPool = _runtimeEventPool.ToArray();
-                Log("✓ FloorConfig: from ScriptableObject");
-            }
-            else
-            {
-                _runtimeFloorConfig = ScriptableObject.CreateInstance<FloorConfig>();
-                _runtimeFloorConfig.floorName = "Test Floor";
-                _runtimeFloorConfig.floorNumber = 1;
-                _runtimeFloorConfig.minRooms = 5;
-                _runtimeFloorConfig.maxRooms = 7;
-                _runtimeFloorConfig.minChoices = 2;
-                _runtimeFloorConfig.maxChoices = 3;
-
-                _runtimeFloorConfig.normalCombatWeight = 40f;
-                _runtimeFloorConfig.eliteWeight = 10f;
-                _runtimeFloorConfig.shopWeight = 15f;
-                _runtimeFloorConfig.mysteryWeight = 20f;
-                _runtimeFloorConfig.restWeight = 12f;
-                _runtimeFloorConfig.treasureWeight = 3f;
-
-                _runtimeFloorConfig.mysteryEventWeight = 60f;
-                _runtimeFloorConfig.mysteryCombatWeight = 30f;
-                _runtimeFloorConfig.mysteryShopWeight = 10f;
-
-                _runtimeFloorConfig.guaranteedShopAtRoom = 3;
-                _runtimeFloorConfig.eliteUnlockAfterRoom = 2;
-                _runtimeFloorConfig.minRoomsBetweenElites = 2;
-
-                _runtimeFloorConfig.normalEnemyPool = _runtimeNormalPool.ToArray();
-                _runtimeFloorConfig.eliteEnemyPool = _runtimeElitePool.ToArray();
-                _runtimeFloorConfig.bossEnemies = _runtimeBossPool.ToArray();
-                _runtimeFloorConfig.eventPool = _runtimeEventPool.ToArray();
-                Log("✓ FloorConfig: fallback (5–7 rooms for fast testing)");
-            }
-        }
-        void BuildFallbackStarterDeck()
-        {
-            // Requires at least Strike and Defend in the card pool
-            for (int i = 0; i < 5; i++) _masterDeck.Add(MakeCardByName("Strike"));
-            for (int i = 0; i < 4; i++) _masterDeck.Add(MakeCardByName("Defend"));
-            _masterDeck.Add(MakeCardByName("VenomBlade"));
-            _masterDeck.Add(MakeCardByName("Acrobatics"));
-        }
-
-        CardInstance MakeCardByName(string name)
-        {
-            foreach (var cd in _runtimeCardPool)
-                if (cd.cardName == name) return new CardInstance(cd);
-            return new CardInstance(_runtimeCardPool[0]);
-        }
-
-        void BuildFallbackCardPool()
-        {
-            _runtimeCardPool.Add(MakeCardData("Strike", CardType.Attack, 1, new[] { (6, DamageType.Physical) }));
-            _runtimeCardPool.Add(MakeCardData("Heavy Strike", CardType.Attack, 2, new[] { (14, DamageType.Physical) }));
-            _runtimeCardPool.Add(MakeCardData("Defend", CardType.Skill, 1, null, blockGain: 5));
-            _runtimeCardPool.Add(MakeCardData("Iron Wave", CardType.Skill, 1, new[] { (5, DamageType.Physical) }, blockGain: 5));
-            _runtimeCardPool.Add(MakeCardData("VenomBlade", CardType.Attack, 2, new[] { (5, DamageType.Physical) }, poisonApply: 3));
-            _runtimeCardPool.Add(MakeCardData("Whirlwind", CardType.Attack, 2, new[] { (5, DamageType.Physical) }));
-            _runtimeCardPool.Add(MakeCardData("Acrobatics", CardType.Skill, 0, null, drawCards: 2));
-            _runtimeCardPool.Add(MakeCardData("Barricade", CardType.Power, 3, null, blockGain: 12));
-        }
-
-        void BuildFallbackNormalPool()
-        {
-            _runtimeNormalPool.Add(MakeEnemy("Slime", 24, new[] { ("Chomp", 6, 1), ("Ooze", 0, 0) }));
-            _runtimeNormalPool.Add(MakeEnemy("Cultist", 18, new[] { ("Ritual", 0, 0), ("Dark Strike", 5, 2) }));
-            _runtimeNormalPool.Add(MakeEnemy("Rat", 14, new[] { ("Bite", 4, 1), ("Scratch", 3, 2) }));
-        }
-
-        void BuildFallbackElitePool()
-        {
-            _runtimeElitePool.Add(MakeEnemy("Slime King", 50, new[] { ("Engulf", 12, 1), ("Split", 0, 0), ("Slam", 8, 2) }));
-            _runtimeElitePool.Add(MakeEnemy("Dark Priest", 45, new[] { ("Curse", 0, 0), ("Dark Beam", 10, 1) }));
-        }
-
-        void BuildFallbackBossPool()
-        {
-            _runtimeBossPool.Add(MakeEnemy("The Guardian", 100,
-                new[] { ("Shield Bash", 10, 1), ("Crush", 18, 1), ("Wall", 0, 0) }));
-        }
-
-        void BuildFallbackEventPool()
+        // Events still need EventData SOs for now — built here rather than scattered across TestHarness
+        EventData[] BuildEventPool()
         {
             var shrine = ScriptableObject.CreateInstance<EventData>();
-            shrine.eventName = "Forgotten Shrine";
-            shrine.eventID = "shrine";
+            shrine.eventName   = "Forgotten Shrine";
+            shrine.eventID     = "shrine";
             shrine.flavourText = "A crumbling shrine glows faintly. You feel a pull toward it.";
             shrine.choices = new[]
             {
                 new EventChoice { choiceText = "Pray (30 HP)", hpCost = 30, goldReward = 50,
-                    outcomeText = "The shrine accepts your offering. Gold spills from the base." },
+                    outcomeText = "Gold spills from the base." },
                 new EventChoice { choiceText = "Desecrate", hpChange = -10,
                     outcomeText = "Bad idea. Something punishes you." },
                 new EventChoice { choiceText = "Walk away",
@@ -1058,8 +949,8 @@ namespace CardGame
             };
 
             var merchant = ScriptableObject.CreateInstance<EventData>();
-            merchant.eventName = "Wandering Merchant";
-            merchant.eventID = "wandering_merchant";
+            merchant.eventName   = "Wandering Merchant";
+            merchant.eventID     = "wandering_merchant";
             merchant.flavourText = "A hunched figure offers you a strange glowing card.";
             merchant.choices = new[]
             {
@@ -1069,96 +960,93 @@ namespace CardGame
                     outcomeText = "Their eyes follow you." }
             };
 
-            _runtimeEventPool.Add(shrine);
-            _runtimeEventPool.Add(merchant);
+            return new[] { shrine, merchant };
         }
 
-        CardData MakeCardData(string name, CardType type, int cost,
-            (int mag, DamageType dtype)[] dmgEffects = null,
-            int blockGain = 0, int poisonApply = 0, int drawCards = 0)
+        // ============================================================
+        // GOLD BONUS PER ROOM TYPE
+        // ============================================================
+
+        int GoldBonusForRoom(RoomType type) => type switch
         {
-            var data = ScriptableObject.CreateInstance<CardData>();
-            data.cardName = name;
-            data.cardID = name.ToLower().Replace(" ", "_");
-            data.cardType = type;
-            data.energyCost = cost;
-            data.owner = _playerClass;
-            data.rarity = CardRarity.Common;
+            RoomType.NormalCombat => 0,
+            RoomType.EliteCombat  => 15,
+            RoomType.Boss         => 30,
+            RoomType.Shop         => 0,
+            RoomType.Rest         => Random.Range(0, 2) == 0 ? Random.Range(5, 16) : 0,
+            RoomType.Treasure     => Random.Range(20, 41),
+            RoomType.Mystery      => Random.Range(5, 16),
+            _                     => 0
+        };
 
-            var effects = new List<CardEffect>();
+        // ============================================================
+        // INTENT DISPLAY
+        // Uses customIntentDescription if set, otherwise infers.
+        // ============================================================
 
-            if (dmgEffects != null)
-            {
-                foreach (var (mag, dtype) in dmgEffects)
-                {
-                    var fx = ScriptableObject.CreateInstance<DealDamageEffect>();
-                    fx.trigger = EffectTrigger.OnPlay;
-                    fx.target = EffectTarget.SingleEnemy;
-                    fx.damageType = dtype;
-                    fx.baseMagnitude = mag;
-                    effects.Add(fx);
-                }
-            }
-
-            if (blockGain > 0)
-            {
-                var fx = ScriptableObject.CreateInstance<GainBlockEffect>();
-                fx.trigger = EffectTrigger.OnPlay;
-                fx.target = EffectTarget.Self;
-                fx.baseMagnitude = blockGain;
-                effects.Add(fx);
-            }
-
-            if (poisonApply > 0)
-            {
-                var fx = ScriptableObject.CreateInstance<ApplyStatusEffect>();
-                fx.trigger = EffectTrigger.OnPlay;
-                fx.target = EffectTarget.SingleEnemy;
-                fx.statusType = StatusType.Poison;
-                fx.baseMagnitude = poisonApply;
-                effects.Add(fx);
-            }
-
-            if (drawCards > 0)
-            {
-                var fx = ScriptableObject.CreateInstance<DrawCardsEffect>();
-                fx.trigger = EffectTrigger.OnPlay;
-                fx.baseMagnitude = drawCards;
-                effects.Add(fx);
-            }
-
-            data.effects = effects.ToArray();
-            return data;
-        }
-
-        EnemyData MakeEnemy(string name, int hp, (string actionName, int dmg, int hits)[] actions)
+        string BuildIntentDisplay(EnemyAction intent)
         {
-            var data = ScriptableObject.CreateInstance<EnemyData>();
-            data.enemyName = name;
-            data.enemyID = name.ToLower().Replace(" ", "_");
-            data.baseHP = hp;
+            if (intent == null) return "  ❓ Unknown";
 
-            var actionList = new List<EnemyAction>();
-            foreach (var (aName, dmg, hits) in actions)
+            if (!string.IsNullOrEmpty(intent.customIntentDescription))
+                return $"  {IntentIcon(intent.intentType)} {intent.customIntentDescription}";
+
+            string icon = IntentIcon(intent.intentType);
+            string name = intent.actionName;
+
+            return intent.intentType switch
             {
-                var a = ScriptableObject.CreateInstance<EnemyAction>();
-                a.actionName = aName;
-                a.damage = dmg;
-                a.hitCount = Mathf.Max(1, hits);
-
-                if (dmg > 0)
-                    a.intentType = EnemyIntent.Attack;
-                else if (hits == 0)
-                { a.intentType = EnemyIntent.Defend; a.selfBlock = 8; }
-                else
-                    a.intentType = EnemyIntent.Buff;
-
-                actionList.Add(a);
-            }
-
-            data.actionPattern = actionList.ToArray();
-            return data;
+                EnemyIntent.Attack when intent.hitCount > 1 =>
+                    $"  {icon} {name}  {intent.damage} × {intent.hitCount} = {intent.damage * intent.hitCount} dmg",
+                EnemyIntent.Attack =>
+                    $"  {icon} {name}  {intent.damage} dmg",
+                EnemyIntent.Defend =>
+                    $"  {icon} {name}  +{intent.selfBlock} Block",
+                _ =>
+                    $"  {icon} {name}"
+            };
         }
+
+        // ============================================================
+        // GUI STYLE HELPERS
+        // ============================================================
+
+        GUIStyle Bold(int size = 14)
+        {
+            var s = new GUIStyle(GUI.skin.label);
+            s.fontStyle = FontStyle.Bold;
+            s.fontSize  = size;
+            return s;
+        }
+
+        GUIStyle Style(int size = 14)
+        {
+            var s = new GUIStyle(GUI.skin.label);
+            s.fontSize = size;
+            s.wordWrap = true;
+            return s;
+        }
+
+        string RoomIcon(RoomType type) => type switch
+        {
+            RoomType.NormalCombat => "⚔",
+            RoomType.EliteCombat  => "💀",
+            RoomType.Boss         => "👑",
+            RoomType.Shop         => "🛒",
+            RoomType.Mystery      => "❓",
+            RoomType.Rest         => "🔥",
+            RoomType.Treasure     => "💎",
+            _                     => "•"
+        };
+
+        string IntentIcon(EnemyIntent intent) => intent switch
+        {
+            EnemyIntent.Attack => "⚔",
+            EnemyIntent.Defend => "🛡",
+            EnemyIntent.Buff   => "✨",
+            EnemyIntent.Debuff => "💀",
+            _                  => "❓"
+        };
 
         void DrawLog(float height)
         {
@@ -1175,42 +1063,5 @@ namespace CardGame
             _logScroll.y = float.MaxValue;
             Debug.Log($"[Harness] {msg}");
         }
-
-        GUIStyle Bold(int size = 14)
-        {
-            var s = new GUIStyle(GUI.skin.label);
-            s.fontStyle = FontStyle.Bold;
-            s.fontSize = size;
-            return s;
-        }
-
-        GUIStyle Style(int size = 14)
-        {
-            var s = new GUIStyle(GUI.skin.label);
-            s.fontSize = size;
-            s.wordWrap = true;
-            return s;
-        }
-
-        string RoomIcon(RoomType type) => type switch
-        {
-            RoomType.NormalCombat => "⚔",
-            RoomType.EliteCombat => "💀",
-            RoomType.Boss => "👑",
-            RoomType.Shop => "🛒",
-            RoomType.Mystery => "❓",
-            RoomType.Rest => "🔥",
-            RoomType.Treasure => "💎",
-            _ => "•"
-        };
-
-        string IntentIcon(EnemyIntent intent) => intent switch
-        {
-            EnemyIntent.Attack => "⚔",
-            EnemyIntent.Defend => "🛡",
-            EnemyIntent.Buff => "✨",
-            EnemyIntent.Debuff => "💀",
-            _ => "❓"
-        };
     }
 }

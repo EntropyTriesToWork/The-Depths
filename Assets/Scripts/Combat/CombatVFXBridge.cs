@@ -182,9 +182,7 @@ namespace CardGame
         public int            SelfBlock       { get; }
 
         // Derived helpers for UI
-        public bool IsAttack     => IntentType == EnemyIntent.Attack
-                                 || IntentType == EnemyIntent.AttackAndDebuff
-                                 || IntentType == EnemyIntent.AttackAndBuff;
+        public bool IsAttack => IntentType == EnemyIntent.Attack;
         public bool IsMultiHit   => HitCount > 1;
         public string HitPattern => IsMultiHit ? $"{HitCount}×{TotalDamage / HitCount}" : $"{TotalDamage}";
 

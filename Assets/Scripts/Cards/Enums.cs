@@ -54,10 +54,6 @@ namespace CardGame
         AllCharacters       // Self + all enemies (e.g. a curse card)
     }
 
-    // ----------------------------------------------------------
-    // Effect triggers (when the effect fires)
-    // ----------------------------------------------------------
-
     public enum EffectTrigger
     {
         OnPlay,             // Default — fires when the card is played
@@ -69,10 +65,6 @@ namespace CardGame
         EndOfTurn           // Powers that fire at the end of player's turn
     }
 
-    // ----------------------------------------------------------
-    // Damage types (for resistance / weakness systems later)
-    // ----------------------------------------------------------
-
     public enum DamageType
     {
         Physical,
@@ -82,10 +74,6 @@ namespace CardGame
         Dark,
         True              // Bypasses block
     }
-
-    // ----------------------------------------------------------
-    // Status effect types
-    // ----------------------------------------------------------
 
     public enum StatusType
     {
@@ -107,7 +95,8 @@ namespace CardGame
         // Neutral / Mechanical
         Intangible,       // Reduce all damage taken to 1 this turn
         Barricade,        // Block does not expire at start of turn
-        Energized         // Gain +1 energy next turn
+        Energized,         // Gain +1 energy next turn
+        Corruption,        //Skills cost 0 but exhaust when played.
     }
 
     public enum StatusStackBehavior
