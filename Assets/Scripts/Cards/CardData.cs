@@ -6,7 +6,11 @@ public class CardData : ScriptableObject
 {
     public string cardName;
     public Sprite art;
+    public string cardDescription;
+    public int energyCost;
     public int manaCost;
+    public CardType cardType;
+    public Rarity rarity;
     public List<EffectEntry> effects;
 
     // Optionally, upgrade version reference
@@ -16,14 +20,22 @@ public class CardData : ScriptableObject
 [System.Serializable]
 public class EffectEntry
 {
-    public Effect effect;               // The ScriptableObject effect
-    public EffectParameters parameters; // Values to pass at runtime
+    public Effect effect;
+    public EffectParameters parameters;
 }
 
-public enum CardTypes
+public enum CardType
 {
     Attack, 
     Skill,
     Power,
     Curse,
+}
+
+public enum Rarity
+{
+    Crude,
+    Basic,
+    Refined,
+    Perfect
 }

@@ -1,6 +1,9 @@
 /// <summary>
 /// Describes a single reward entry displayed on the RewardScreen.
 /// Build these with RewardScreenFactory and pass a list to RewardScreen.Open().
+
+/// RewardScreen.Open() overrides canSkip to false on all entries when
+/// RewardModifiers.forcePickupAll is set.
 /// </summary>
 [System.Serializable]
 public class RewardItem
@@ -14,39 +17,35 @@ public class RewardItem
     #region Data
 
     public RewardType type;
-    public bool       canSkip; // gold is always false; cards and relics default to true
+    public bool       canSkip;
 
-    public int        goldAmount; // used when type == Gold
-    public CardData   card;       // used when type == Card
-    public RelicData  relic;      // used when type == Relic
+    public int        goldAmount;
+    public CardData   card;
+    public RelicData  relic;
 
     #endregion
 
     #region Factories
 
-    /// <summary>
-    /// Gold reward — added to PlayerInventory immediately on display;
-    /// canSkip is always false.
-    /// </summary>
     public static RewardItem Gold(int amount) => new()
     {
         type       = RewardType.Gold,
         goldAmount = amount,
-        canSkip    = false
+        canSkip    = true
     };
 
-    public static RewardItem Card(CardData card, bool canSkip = true) => new()
+    public static RewardItem Card(CardData card) => new()
     {
         type    = RewardType.Card,
         card    = card,
-        canSkip = canSkip
+        canSkip = true 
     };
 
-    public static RewardItem Relic(RelicData relic, bool canSkip = true) => new()
+    public static RewardItem Relic(RelicData relic) => new()
     {
         type    = RewardType.Relic,
         relic   = relic,
-        canSkip = canSkip
+        canSkip = true
     };
 
     #endregion

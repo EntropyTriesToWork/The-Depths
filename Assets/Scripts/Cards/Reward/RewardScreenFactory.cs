@@ -3,63 +3,67 @@ using UnityEngine;
 
 /// <summary>
 /// Static factory that builds RewardItem lists for common reward scenarios.
-/// Call the appropriate method, then pass the result to RewardScreen.Open().
+/// Always pass a RewardModifiers instance so relic/curse effects are applied.
 ///
 /// Examples:
-///   RewardScreen.Instance.Open(RewardScreenFactory.CombatReward(cardPool, 3, goldAmount));
-///   RewardScreen.Instance.Open(RewardScreenFactory.BossReward(cardPool, 3, relic, goldAmount));
-///   RewardScreen.Instance.Open(RewardScreenFactory.RelicOnly(relic));
+///   var mods = BuildModifiers(); // apply relic/curse effects to mods first
+///   RewardScreen.Instance.Open(RewardScreenFactory.CombatReward(pool, mods, gold: 75), mods);
+///   RewardScreen.Instance.Open(RewardScreenFactory.BossReward(pool, mods, relic, gold: 100), mods);
 /// </summary>
 public static class RewardScreenFactory
 {
+    #region Base Card Count
+
+    public const int BaseCardCount = 3; // default before modifiers
+
+    #endregion
+
     #region Common Scenarios
 
     /// <summary>
-    /// Standard post-combat reward: gold (instant) + a card choice.
+    /// Standard post-combat reward: instant gold + a card offer group.
+    /// Card count = BaseCardCount + modifiers.cardCountBonus, minimum 1.
     /// </summary>
-    /// <param name="pool">Global card pool to draw choices from.</param>
-    /// <param name="cardCount">Number of cards to offer.</param>
-    /// <param name="gold">Gold to award instantly. Pass 0 to omit.</param>
-    public static List<RewardItem> CombatReward(CardPool pool, int cardCount, int gold = 0)
+    public static List<RewardItem> CombatReward(CardPool pool, RewardModifiers modifiers, int gold = 0)
     {
         List<RewardItem> items = new();
 
         if (gold > 0)
             items.Add(RewardItem.Gold(gold));
 
-        items.AddRange(BuildCardOffers(pool, cardCount));
+        items.AddRange(BuildCardOffers(pool, modifiers));
 
         return items;
     }
 
     /// <summary>
-    /// Boss reward: gold (instant) + a card choice + a relic pickup.
+    /// Boss reward: instant gold + a card offer group + a relic entry.
     /// </summary>
-    public static List<RewardItem> BossReward(CardPool pool, int cardCount, RelicData relic, int gold = 0)
+    public static List<RewardItem> BossReward(CardPool pool, RewardModifiers modifiers, RelicData relic, int gold = 0)
     {
         List<RewardItem> items = new();
 
         if (gold > 0)
             items.Add(RewardItem.Gold(gold));
 
-        items.AddRange(BuildCardOffers(pool, cardCount));
+        items.AddRange(BuildCardOffers(pool, modifiers));
 
         if (relic != null)
-            items.Add(RewardItem.Relic(relic, canSkip: true));
+            items.Add(RewardItem.Relic(relic));
 
         return items;
     }
 
     /// <summary>
-    /// Treasure room or event: a single relic, skippable.
+    /// Treasure room / event: a single relic entry.
     /// </summary>
-    public static List<RewardItem> RelicOnly(RelicData relic, bool canSkip = true)
+    public static List<RewardItem> RelicOnly(RelicData relic)
     {
-        return new List<RewardItem> { RewardItem.Relic(relic, canSkip) };
+        return new List<RewardItem> { RewardItem.Relic(relic) };
     }
 
     /// <summary>
-    /// Gold-only reward (e.g. some events). Claimed instantly on Open().
+    /// Gold-only reward (some events). Claimed instantly when the screen opens.
     /// </summary>
     public static List<RewardItem> GoldOnly(int gold)
     {
@@ -67,7 +71,7 @@ public static class RewardScreenFactory
     }
 
     /// <summary>
-    /// Fully custom reward list — supply any combination of items directly.
+    /// Fully custom reward list — supply any combination of RewardItems directly.
     /// </summary>
     public static List<RewardItem> Custom(params RewardItem[] items)
     {
@@ -79,24 +83,25 @@ public static class RewardScreenFactory
     #region Helpers
 
     /// <summary>
-    /// Draws <paramref name="count"/> unique random cards from <paramref name="pool"/>
-    /// and wraps each one as a skippable RewardItem.Card entry.
-    /// All cards in one call share the same "offer group" — claiming or skipping
-    /// any one of them removes the rest via RewardScreen.
+    /// Draws cards from the pool using the modifier-adjusted count and wraps
+    /// each one as a RewardItem.Card. All cards from one call form a single
+    /// offer group — claiming or skipping any one removes the rest.
     /// </summary>
-    private static List<RewardItem> BuildCardOffers(CardPool pool, int count)
+    private static List<RewardItem> BuildCardOffers(CardPool pool, RewardModifiers modifiers)
     {
         List<RewardItem> offers = new();
 
         if (pool == null)
         {
-            Debug.LogWarning("[RewardScreenFactory] CardPool is null — no card offers generated.");
+            Debug.LogWarning("[RewardScreenFactory] CardPool is null — skipping card offers.");
             return offers;
         }
 
+        int count = modifiers?.ApplyToCardCount(BaseCardCount) ?? BaseCardCount;
         List<CardData> drawn = pool.GetRandom(count);
+
         foreach (CardData card in drawn)
-            offers.Add(RewardItem.Card(card, canSkip: true));
+            offers.Add(RewardItem.Card(card));
 
         return offers;
     }

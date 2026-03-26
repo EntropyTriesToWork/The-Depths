@@ -191,6 +191,69 @@ ScriptedImporter:
     edges: []
     tessellationDetail: 0
     uvTransform: {x: 0, y: 0}
+  - name: crude
+    originalName: 
+    pivot: {x: 0.5, y: 0.5}
+    alignment: 0
+    border: {x: 4, y: 4, z: 4, w: 4}
+    customData: 
+    rect:
+      serializedVersion: 2
+      x: 4
+      y: 214
+      width: 32
+      height: 32
+    spriteID: 84e56619624eef341aae8b687c27a025
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 0, y: 0}
+  - name: refined
+    originalName: 
+    pivot: {x: 0.5, y: 0.5}
+    alignment: 0
+    border: {x: 4, y: 4, z: 4, w: 4}
+    customData: 
+    rect:
+      serializedVersion: 2
+      x: 100
+      y: 214
+      width: 32
+      height: 32
+    spriteID: c654e62745ab68741bbfe9c725871457
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 0, y: 0}
+  - name: perfect
+    originalName: 
+    pivot: {x: 0.5, y: 0.5}
+    alignment: 0
+    border: {x: 4, y: 4, z: 4, w: 4}
+    customData: 
+    rect:
+      serializedVersion: 2
+      x: 196
+      y: 214
+      width: 32
+      height: 32
+    spriteID: 7b7b7f4358e04c24eace7c901a77fc60
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 0, y: 0}
   tileSetImportData: []
   asepriteLayers:
   - layerIndex: 0

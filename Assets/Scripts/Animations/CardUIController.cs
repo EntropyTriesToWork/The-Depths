@@ -11,6 +11,8 @@ public class CardUIController : MonoBehaviour, IPointerEnterHandler, IPointerExi
     [SerializeField] private RectTransform descriptionContainer;
     [SerializeField] private TextMeshProUGUI nameText;
     [SerializeField] private TextMeshProUGUI descriptionText;
+    [SerializeField] private TextMeshProUGUI energyCostText;
+    [SerializeField] private TextMeshProUGUI manaGainText;
     [SerializeField] private Image artImage;
 
     [SerializeField] private float normalWidth = 100f;
@@ -49,11 +51,13 @@ public class CardUIController : MonoBehaviour, IPointerEnterHandler, IPointerExi
         }
     }
 
-    public void Initialize(string cardName, string cardDescription, Sprite artSprite, bool descActive, UnityAction OnClickAction)
+    public void Initialize(string cardName, string cardDescription, Sprite artSprite, bool descActive, int energyCost, int manaGain, UnityAction OnClickAction)
     {
         nameText.text = cardName;
         descriptionText.text = cardDescription;
         descriptionAlwaysVisible = descActive;
+        energyCostText.text = energyCost.ToString();
+        manaGainText.text = manaGain.ToString();
         if (artImage != null) artImage.sprite = artSprite;
         if(OnClickAction != null) { onClick.AddListener(OnClickAction); }
     }

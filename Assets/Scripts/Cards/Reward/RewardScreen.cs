@@ -5,18 +5,19 @@ using UnityEngine;
 /// Manages the state of an active reward screen — which rewards are pending,
 /// which have been claimed or skipped, and when the screen is fully resolved.
 ///
-/// Does NOT handle UI rendering; that is left to a presenter / view layer
-/// that subscribes to the events below. Does NOT decide what happens after
-/// the screen closes — raise OnRewardScreenClosed and let the caller respond.
+/// Does NOT handle UI rendering — a presenter/view layer subscribes to the
+/// events below. Does NOT decide what comes after closing — raises
+/// OnRewardScreenClosed and lets the caller respond.
 ///
 /// Typical flow:
-///   1. RewardScreenFactory.Create(...) builds a List of RewardItems.
-///   2. Caller calls RewardScreen.Open(items) to begin the session.
-///   3. Gold rewards are claimed automatically in Open().
-///   4. Player clicks a card/relic → Claim(item) is called.
-///   5. Player clicks skip on a card/relic → Skip(item) is called.
-///   6. Once all non-skippable items are resolved, Proceed() becomes valid.
-///   7. Player clicks Proceed → OnRewardScreenClosed fires.
+///   1. Build modifiers: apply relic/curse effects to a RewardModifiers instance.
+///   2. Build items:     RewardScreenFactory.CombatReward(pool, modifiers, gold).
+///   3. Open screen:     RewardScreen.Instance.Open(items, modifiers).
+///   4. Gold is claimed automatically; remaining items appear in PendingRewards.
+///   5. Player clicks a card/relic entry → Claim(item).
+///   6. Player clicks skip on an entry   → Skip(item)  [if canSkip is true].
+///   7. Player clicks Proceed            → Proceed()   [only valid when CanProceed].
+///   8. OnRewardScreenClosed fires — caller drives the next state.
 /// </summary>
 public class RewardScreen : MonoBehaviour
 {
@@ -37,66 +38,53 @@ public class RewardScreen : MonoBehaviour
     public IReadOnlyList<RewardItem> PendingRewards => pendingRewards;
     private readonly List<RewardItem> pendingRewards = new();
 
-    public bool IsOpen { get; private set; }
-
-    /// <summary>True once every non-skippable reward has been resolved.</summary>
-    public bool CanProceed
+    public bool IsOpen        { get; private set; }
+    public bool ForcePickupAll { get; private set; }
+    public bool AutoClaimGold { get; private set; }
+    public bool CanProceed // True when every pending reward has canSkip == true (or the list is empty / everything was picked up).
     {
         get
         {
             foreach (RewardItem item in pendingRewards)
-                if (!item.canSkip) return false; // a mandatory item is still pending
+                if (!item.canSkip) return false;
             return true;
         }
     }
-
     #endregion
 
     #region Events
 
-    /// <summary>Fired after Open() processes the full item list (including auto-gold).</summary>
-    public event System.Action<IReadOnlyList<RewardItem>> OnRewardScreenOpened;
-
-    /// <summary>Fired when the player claims a reward. UI should remove the entry.</summary>
-    public event System.Action<RewardItem> OnRewardClaimed;
-
-    /// <summary>Fired when the player skips a skippable reward. UI should remove the entry.</summary>
-    public event System.Action<RewardItem> OnRewardSkipped;
-
-    /// <summary>
-    /// Fired when the player clicks Proceed and all mandatory rewards are resolved.
-    /// The caller (room system, GameManager, etc.) decides what scene/state comes next.
-    /// </summary>
-    public event System.Action OnRewardScreenClosed;
+    public event System.Action<IReadOnlyList<RewardItem>> OnRewardScreenOpened; // after gold auto-claimed
+    public event System.Action<RewardItem>                OnRewardClaimed;
+    public event System.Action<RewardItem>                OnRewardSkipped;
+    public event System.Action                            OnRewardScreenClosed;  // caller decides next state
 
     #endregion
 
     #region Public API
-
-    /// <summary>
-    /// Opens the reward screen with the supplied items.
-    /// Gold rewards are claimed immediately — they never sit in the pending list.
-    /// </summary>
-    public void Open(List<RewardItem> items)
+    public void Open(List<RewardItem> items, RewardModifiers modifiers = null)
     {
         pendingRewards.Clear();
-        IsOpen = true;
+        IsOpen         = true;
+        ForcePickupAll = modifiers?.forcePickupAll ?? false;
+        AutoClaimGold = modifiers.autoClaimAllGold;
 
         foreach (RewardItem item in items)
         {
-            if (item.type == RewardItem.RewardType.Gold)
-                ClaimGoldImmediately(item); // gold is instant, never shown as a choice
-            else
-                pendingRewards.Add(item);
+            if (item.type == RewardItem.RewardType.Gold && AutoClaimGold)
+            {
+                ClaimGoldImmediately(item); // gold never enters the pending list
+                continue;
+            }
+
+            if (ForcePickupAll)
+                item.canSkip = false; // curse/relic forces all rewards to be taken
+
+            pendingRewards.Add(item);
         }
 
         OnRewardScreenOpened?.Invoke(PendingRewards);
     }
-
-    /// <summary>
-    /// Claims a reward — adds it to the player's inventory and removes it from
-    /// the pending list. Only one card from a card reward group may be claimed.
-    /// </summary>
     public void Claim(RewardItem item)
     {
         if (!pendingRewards.Contains(item)) return;
@@ -105,7 +93,7 @@ public class RewardScreen : MonoBehaviour
         {
             case RewardItem.RewardType.Card:
                 PlayerInventory.Instance?.AddCard(item.card);
-                RemoveAllCardsFromPending(); // claiming one card removes all card offers
+                RemoveAllCardsFromPending(); // one card pick dismisses the whole group
                 break;
 
             case RewardItem.RewardType.Relic:
@@ -117,38 +105,29 @@ public class RewardScreen : MonoBehaviour
         OnRewardClaimed?.Invoke(item);
         GameEvents.Raise(new OnRewardClaimedEvent(item));
     }
-
-    /// <summary>
-    /// Skips a skippable reward, removing it from the pending list without granting it.
-    /// Skipping a card offer removes all card choices for that reward group.
-    /// </summary>
     public void Skip(RewardItem item)
     {
         if (!pendingRewards.Contains(item)) return;
+
         if (!item.canSkip)
         {
-            Debug.LogWarning($"[RewardScreen] Attempted to skip a non-skippable reward: {item.type}");
+            Debug.LogWarning($"[RewardScreen] Cannot skip a forced reward: {item.type}");
             return;
         }
 
         if (item.type == RewardItem.RewardType.Card)
-            RemoveAllCardsFromPending(); // skipping the card group removes all its choices
+            RemoveAllCardsFromPending(); // skipping one card dismisses the whole group
         else
             pendingRewards.Remove(item);
 
         OnRewardSkipped?.Invoke(item);
         GameEvents.Raise(new OnRewardSkippedEvent(item));
     }
-
-    /// <summary>
-    /// Called when the player clicks the Proceed / Continue button.
-    /// Does nothing if mandatory rewards are still unresolved.
-    /// </summary>
     public void Proceed()
     {
         if (!CanProceed)
         {
-            Debug.LogWarning("[RewardScreen] Proceed called but mandatory rewards are still pending.");
+            Debug.LogWarning("[RewardScreen] Proceed called with mandatory rewards still pending.");
             return;
         }
 
@@ -165,10 +144,9 @@ public class RewardScreen : MonoBehaviour
     private void ClaimGoldImmediately(RewardItem item)
     {
         PlayerInventory.Instance?.AddGold(item.goldAmount);
-        GameEvents.Raise(new OnRewardClaimedEvent(item)); // notify UI for a visual beat if desired
+        GameEvents.Raise(new OnRewardClaimedEvent(item)); // UI can show a visual beat on this
     }
 
-    /// <summary>Removes all Card-type entries from pending (one offer group at a time).</summary>
     private void RemoveAllCardsFromPending()
     {
         pendingRewards.RemoveAll(r => r.type == RewardItem.RewardType.Card);
