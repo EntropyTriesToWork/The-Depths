@@ -19,3 +19,11 @@ public class EffectEntry
     public Effect effect;               // The ScriptableObject effect
     public EffectParameters parameters; // Values to pass at runtime
 }
+
+public enum CardTypes
+{
+    Attack, 
+    Skill,
+    Power,
+    Curse,
+}

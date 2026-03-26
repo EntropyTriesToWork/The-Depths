@@ -3,80 +3,114 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TMPro;
 using System.Collections;
+using UnityEngine.Events;
 
 public class CardUIController : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
 {
-    [Header("References")]
     [SerializeField] private RectTransform cardRect;
     [SerializeField] private RectTransform descriptionContainer;
     [SerializeField] private TextMeshProUGUI nameText;
     [SerializeField] private TextMeshProUGUI descriptionText;
     [SerializeField] private Image artImage;
 
-    [Header("Card Size")]
+    [SerializeField] private float normalWidth = 100f;
+    [SerializeField] private float hoverWidth = 120f;
     [SerializeField] private float normalHeight = 100f;
     [SerializeField] private float hoverHeight = 150f;
 
-    [Header("Description Box")]
     [SerializeField] private float descriptionNormalHeight = 0f;
-    [SerializeField] private float descriptionHoverHeight = 40f; 
+    [SerializeField] private float descriptionHoverHeight = 40f;
 
-    [Header("Name Font Size")]
-    [SerializeField] private float normalNameFontSize = 36f;
-    [SerializeField] private float hoverNameFontSize = 28f;
+    [SerializeField] private bool descriptionAlwaysVisible = false;
 
-    [Header("Animation")]
     [SerializeField] private float transitionDuration = 0.2f;
 
-    [Header("Events")]
     [SerializeField] private UnityEngine.Events.UnityEvent onClick;
 
+    private Coroutine widthCoroutine;
     private Coroutine heightCoroutine;
     private Coroutine descriptionHeightCoroutine;
-    private Coroutine nameSizeCoroutine;
     private Coroutine descriptionAlphaCoroutine;
 
     private void Awake()
     {
+        SetCardWidth(normalWidth);
         SetCardHeight(normalHeight);
-        SetDescriptionHeight(descriptionNormalHeight);
-        SetDescriptionAlpha(0f);
-        nameText.fontSize = normalNameFontSize;
+
+        if (descriptionAlwaysVisible)
+        {
+            SetDescriptionHeight(descriptionHoverHeight);
+            SetDescriptionAlpha(1f);
+        }
+        else
+        {
+            SetDescriptionHeight(descriptionNormalHeight);
+            SetDescriptionAlpha(0f);
+        }
     }
-    public void Initialize(string cardName, string cardDescription, Sprite artSprite)
+
+    public void Initialize(string cardName, string cardDescription, Sprite artSprite, bool descActive, UnityAction OnClickAction)
     {
         nameText.text = cardName;
         descriptionText.text = cardDescription;
+        descriptionAlwaysVisible = descActive;
         if (artImage != null) artImage.sprite = artSprite;
+        if(OnClickAction != null) { onClick.AddListener(OnClickAction); }
     }
+
     public void OnPointerEnter(PointerEventData eventData)
     {
         StopAllTransitions();
+
+        widthCoroutine = StartCoroutine(TweenCardWidth(normalWidth, hoverWidth, transitionDuration));
         heightCoroutine = StartCoroutine(TweenCardHeight(normalHeight, hoverHeight, transitionDuration));
-        descriptionHeightCoroutine = StartCoroutine(TweenDescriptionHeight(descriptionNormalHeight, descriptionHoverHeight, transitionDuration));
-        nameSizeCoroutine = StartCoroutine(TweenFontSize(nameText, normalNameFontSize, hoverNameFontSize, transitionDuration));
-        descriptionAlphaCoroutine = StartCoroutine(TweenAlpha(descriptionText, 0f, 1f, transitionDuration));
+
+        if (!descriptionAlwaysVisible)
+        {
+            descriptionHeightCoroutine = StartCoroutine(TweenDescriptionHeight(descriptionNormalHeight, descriptionHoverHeight, transitionDuration));
+            descriptionAlphaCoroutine = StartCoroutine(TweenAlpha(descriptionText, 0f, 1f, transitionDuration));
+        }
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
         StopAllTransitions();
+
+        widthCoroutine = StartCoroutine(TweenCardWidth(hoverWidth, normalWidth, transitionDuration));
         heightCoroutine = StartCoroutine(TweenCardHeight(hoverHeight, normalHeight, transitionDuration));
-        descriptionHeightCoroutine = StartCoroutine(TweenDescriptionHeight(descriptionHoverHeight, descriptionNormalHeight, transitionDuration));
-        nameSizeCoroutine = StartCoroutine(TweenFontSize(nameText, hoverNameFontSize, normalNameFontSize, transitionDuration));
-        descriptionAlphaCoroutine = StartCoroutine(TweenAlpha(descriptionText, 1f, 0f, transitionDuration));
+
+        if (!descriptionAlwaysVisible)
+        {
+            descriptionHeightCoroutine = StartCoroutine(TweenDescriptionHeight(descriptionHoverHeight, descriptionNormalHeight, transitionDuration));
+            descriptionAlphaCoroutine = StartCoroutine(TweenAlpha(descriptionText, 1f, 0f, transitionDuration));
+        }
     }
 
     public void OnPointerClick(PointerEventData eventData)
     {
         onClick?.Invoke();
     }
+
     private void StopAllTransitions()
     {
+        if (widthCoroutine != null) StopCoroutine(widthCoroutine);
         if (heightCoroutine != null) StopCoroutine(heightCoroutine);
         if (descriptionHeightCoroutine != null) StopCoroutine(descriptionHeightCoroutine);
-        if (nameSizeCoroutine != null) StopCoroutine(nameSizeCoroutine);
         if (descriptionAlphaCoroutine != null) StopCoroutine(descriptionAlphaCoroutine);
+    }
+
+    private IEnumerator TweenCardWidth(float from, float to, float duration)
+    {
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            float t = elapsed / duration;
+            float width = Mathf.Lerp(from, to, t);
+            SetCardWidth(width);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        SetCardWidth(to);
     }
 
     private IEnumerator TweenCardHeight(float from, float to, float duration)
@@ -107,19 +141,6 @@ public class CardUIController : MonoBehaviour, IPointerEnterHandler, IPointerExi
         SetDescriptionHeight(to);
     }
 
-    private IEnumerator TweenFontSize(TextMeshProUGUI target, float from, float to, float duration)
-    {
-        float elapsed = 0f;
-        while (elapsed < duration)
-        {
-            float t = elapsed / duration;
-            target.fontSize = Mathf.Lerp(from, to, t);
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-        target.fontSize = to;
-    }
-
     private IEnumerator TweenAlpha(TextMeshProUGUI target, float from, float to, float duration)
     {
         float elapsed = 0f;
@@ -135,6 +156,13 @@ public class CardUIController : MonoBehaviour, IPointerEnterHandler, IPointerExi
         target.color = new Color(color.r, color.g, color.b, to);
     }
 
+    private void SetCardWidth(float width)
+    {
+        Vector2 size = cardRect.sizeDelta;
+        size.x = width;
+        cardRect.sizeDelta = size;
+    }
+
     private void SetCardHeight(float height)
     {
         Vector2 size = cardRect.sizeDelta;
@@ -148,6 +176,7 @@ public class CardUIController : MonoBehaviour, IPointerEnterHandler, IPointerExi
         size.y = height;
         descriptionContainer.sizeDelta = size;
     }
+
     private void SetDescriptionAlpha(float alpha)
     {
         Color color = descriptionText.color;
