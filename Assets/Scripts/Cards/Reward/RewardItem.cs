@@ -1,10 +1,3 @@
-/// <summary>
-/// Describes a single reward entry displayed on the RewardScreen.
-/// Build these with RewardScreenFactory and pass a list to RewardScreen.Open().
-
-/// RewardScreen.Open() overrides canSkip to false on all entries when
-/// RewardModifiers.forcePickupAll is set.
-/// </summary>
 [System.Serializable]
 public class RewardItem
 {
