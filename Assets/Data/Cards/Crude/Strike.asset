@@ -14,10 +14,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CardData
   cardName: Strike
   art: {fileID: 0}
-  cardDescription: Deal 6 damage.
+  cardDescription: 
   energyCost: 1
   manaCost: 1
   cardType: 0
   rarity: 0
-  effects: []
+  effects:
+  - effect: {fileID: 0}
+    parameters:
+      intValue: 0
+      floatValue: 0
+      stringValue: 
+      manaGain: 0
+      energyGain: 0
+      targetType: 0
+      statusType: 0
+      isExhaust: 0
   upgradedVersion: {fileID: 0}
